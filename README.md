@@ -1,62 +1,49 @@
-<!--
-This is the ml-portfolio-template standards repo (Repo 0).
-Every other portfolio project is created by copying this structure, tooling,
-and documentation pattern.
-
-To create a new project from this template:
-  1. Copy the tree; rename `project_name` -> snake_case package name.
-  2. Replace the placeholders: {{PROJECT_NAME}} (human title),
-     {{project_slug}} (kebab repo name), {{ML_DOMAIN}} (badge text).
-  3. Delete what the repo doesn't use (api.py or app.py, Dockerfile, notebooks/).
-  4. uv add project-specific deps; replace data/train/predict stubs with real logic.
-  5. Fill all 10 README sections, the model card, and the experiment log.
-  6. Keep CI green before publishing.
-
-The content below is the standard README every repo must follow.
--->
-
-# {{PROJECT_NAME}}
+# ml-portfolio-template
 
 ![Python](https://img.shields.io/badge/python-3.13-blue)
-![FastAPI](https://img.shields.io/badge/api-FastAPI-009688)
-![Streamlit](https://img.shields.io/badge/ui-Streamlit-FF4B4B)
-![Docker](https://img.shields.io/badge/docker-ready-2496ED)
+![uv](https://img.shields.io/badge/deps-uv-DE5FE9)
+![Ruff](https://img.shields.io/badge/lint-Ruff-D7FF64)
+![pyright](https://img.shields.io/badge/types-pyright-yellow)
 ![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC)
-![Domain](https://img.shields.io/badge/domain-{{ML_DOMAIN}}-purple)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> One-line description of what this project does.
+> Standards repo for an ML engineering portfolio. Every project repo is created from this template, so they all share one structure, toolchain, and documentation pattern.
 
-## 1. Project summary
-What it is, in 2–3 sentences.
+## What this is
+A reference scaffold — not an application. It defines the conventions every downstream portfolio repo inherits: clean `src/` layout, typed config, a quality gate, CI, and a consistent docs/README pattern.
 
-## 2. Problem statement
-The concrete problem and why it matters.
+## Locked stack
+Python 3.13 · uv · Ruff · pyright · pytest · Pydantic v2 / pydantic-settings · FastAPI · Streamlit · Docker · GitHub Actions · MIT.
 
-## 3. Dataset / source
-Source, size, license. (Details in `data/README.md`.)
+## What's inside
+- `src/project_name/` — package skeleton: typed `config.py`, plus `data` / `train` / `predict` stubs and optional `api.py` (FastAPI) / `app.py` (Streamlit).
+- `tests/` — smoke tests wired to coverage.
+- `docs/` — `architecture.md`, `model_card_template.md`, `experiment_log_template.md`.
+- `docs/README_template.md` — the placeholder README downstream repos copy and fill in.
+- `data/README.md` — the "data is documented, not committed" convention.
+- Tooling: `pyproject.toml`, `Makefile`, `.github/workflows/ci.yml`, `.pre-commit-config.yaml`, optional `Dockerfile`.
 
-## 4. Approach
-Baseline → main approach. Why these choices.
-
-## 5. Model / pipeline architecture
-Short description + diagram (see `docs/architecture.md`).
-
-## 6. How to run locally
+## Start a new project from this template
 ```bash
+# 1. Copy this tree into a new repo, then:
+# 2. Rename the package and replace placeholders
+#    src/project_name/  ->  src/<snake_package>/
+#    {{PROJECT_NAME}} / {{project_slug}} / {{ML_DOMAIN}}  ->  real values
+# 3. Use docs/README_template.md as the new repo's README.md
+# 4. Delete what you don't need (api.py or app.py, Dockerfile, notebooks/)
+# 5. Add project deps:
+uv add scikit-learn        # example
 uv sync
-make check          # lint + typecheck + tests
-make run-api        # or: make run-app
+make check                 # ruff + pyright + pytest must pass
 ```
 
-## 7. Results
-Key metrics in a small table. Honest numbers, not cherry-picked.
+## Local quality gate
+```bash
+uv sync
+make check        # lint, typecheck, tests
+make run-api      # FastAPI at /health
+make run-app      # Streamlit
+```
 
-## 8. Limitations
-What it doesn't do / where it would fail.
-
-## 9. Future improvements
-The "if I had more time" list.
-
-## 10. What this project demonstrates to employers
-2–4 bullets mapping the work to ML-engineering skills.
+## License
+MIT.
