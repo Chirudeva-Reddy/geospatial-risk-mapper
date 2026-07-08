@@ -33,6 +33,10 @@ mlruns/
 # Notebooks
 .ipynb_checkpoints/
 
+# img/ is committed (for README visuals: plots, screenshots)
+!img/
+!img/**
+
 # OS / editor
 .DS_Store
 .idea/
