@@ -73,7 +73,7 @@ The geospatial risk mapper is a modular pipeline for flood risk prediction and v
 
 **Functions**:
 - `load_nuts_boundaries()`: Fetch NUTS 2 regions from Eurostat GISCO
-- `load_ispra_flood_hazard()`: Load ISPRA flood hazard areas (or synthetic demo data)
+- `load_ispra_flood_hazard()`: Load ISPRA flood hazard areas from downloaded shapefiles
 - `load_and_validate()`: End-to-end data loading with CRS validation
 
 **Key Operations**:
@@ -289,7 +289,7 @@ For each NUTS region:
 ### 4. Error Handling
 - Explicit validation (CRS, geometry, features)
 - Informative logging (DEBUG/INFO/WARNING/ERROR)
-- Graceful degradation (synthetic data fallback)
+- Clear error messages with download instructions for missing data
 
 ## Deployment Considerations
 

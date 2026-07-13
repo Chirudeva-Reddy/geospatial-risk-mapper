@@ -198,7 +198,7 @@ uv run pytest --cov=src --cov-report=term-missing
 - Model is not operationally validated
 
 ### Data Limitations
-- ISPRA flood data is synthetic for demo (real data requires download/processing)
+- ISPRA flood data requires manual download (see `make help-data` or data/README.md)
 - NUTS 2 is coarse resolution; finer units (municipalities) would improve granularity
 - No temporal dimension (static risk snapshot)
 

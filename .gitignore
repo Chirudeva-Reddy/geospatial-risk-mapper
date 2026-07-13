@@ -22,6 +22,7 @@ htmlcov/
 data/raw/
 data/processed/
 data/interim/
+data/ispra_shapefiles/
 *.csv
 *.parquet
 *.pkl

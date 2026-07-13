@@ -135,10 +135,10 @@ Model predicts risk at a single point in time; no temporal dimension.
 
 **Mitigation**: Add time-series features (historical flood events, climate projections).
 
-### 5. Synthetic Data (Demo)
-For reproducibility, ISPRA flood data is synthetic. Real data requires manual download/processing.
+### 5. Data Download Required
+ISPRA flood data must be manually downloaded from IdroGEO or the Italian Geoportal. See data/README.md and `make help-data` for instructions.
 
-**Mitigation**: Use real ISPRA data for operational deployment.
+**Setup**: Follow data download instructions before training models.
 
 ### 6. Coarse Resolution
 NUTS 2 is administrative (not hydrological) unit; ~5,000 km² per region.

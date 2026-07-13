@@ -21,9 +21,18 @@ test:           ## Pytest + coverage
 check: lint typecheck test  ## Full local quality gate
 
 train:          ## Train both classifier and regressor models
-	@echo "Training models (requires ISPRA flood data)..."
-	@echo "See data/README.md for download instructions."
-	uv run python -c "from geo_risk.train import train_and_save_all; train_and_save_all()"
+	@if [ -z "$(FLOOD_PATH)" ]; then \
+		echo "Error: FLOOD_PATH not specified."; \
+		echo ""; \
+		echo "Usage: make train FLOOD_PATH=path/to/shapefile_directory"; \
+		echo ""; \
+		echo "Example: make train FLOOD_PATH=data/ispra_shapefiles/"; \
+		echo ""; \
+		echo "For data download instructions, run: make help-data"; \
+		exit 1; \
+	fi
+	@echo "Training models with ISPRA flood data from: $(FLOOD_PATH)"
+	uv run python -c "from geo_risk.train import train_and_save_all; train_and_save_all(flood_path='$(FLOOD_PATH)')"
 
 run-api:        ## Serve FastAPI locally (requires trained models)
 	uv run uvicorn geo_risk.api:app --reload
@@ -38,13 +47,18 @@ help-data:      ## Show data loading instructions
 	@echo "ISPRA Flood Data Setup"
 	@echo "====================="
 	@echo ""
-	@echo "1. Download ISPRA flood hazard shapefiles (3 files: HPH, MPH, LPH)"
-	@echo "   - IdroGEO: https://idrogeo.isprambiente.it/app/page/open-data"
+	@echo "Step 1: Download ISPRA flood hazard shapefiles (3 hazard classes)"
+	@echo "   - IdroGEO (recommended): https://idrogeo.isprambiente.it/app/page/open-data"
 	@echo "   - Geoportal: https://geodati.gov.it/ (search 'pericolosità idraulica')"
 	@echo ""
-	@echo "2. Extract all files to a directory (e.g., data/ispra_shapefiles/)"
+	@echo "Step 2: Extract all files to a directory"
+	@echo "   mkdir -p data/ispra_shapefiles"
+	@echo "   unzip -d data/ispra_shapefiles/ downloaded_file.zip"
 	@echo ""
-	@echo "3. Train models with:"
+	@echo "Step 3: Verify files exist (should contain HPH_*, MPH_*, LPH_* shapefiles)"
+	@echo "   ls data/ispra_shapefiles/"
+	@echo ""
+	@echo "Step 4: Train models"
 	@echo "   make train FLOOD_PATH=data/ispra_shapefiles/"
 	@echo ""
-	@echo "See data/README.md for detailed instructions."
+	@echo "For detailed documentation, see: data/README.md"
