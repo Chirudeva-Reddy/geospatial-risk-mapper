@@ -25,21 +25,35 @@ This project predicts **flood risk** across Italian administrative regions (NUTS
 ### Install & Run
 
 ```bash
-# Install dependencies
+# 1. Install dependencies
 uv sync
 
-# Run quality checks
+# 2. Run quality checks
 make check        # ruff lint, pyright typecheck, pytest
 
-# Train model (generates artifacts in models/)
-uv run python -c "from geo_risk.train import train_and_save; train_and_save()"
+# 3. Download ISPRA flood data (see data/README.md for detailed instructions)
+#    - Download from: https://idrogeo.isprambiente.it/app/page/open-data
+#    - Extract to: data/ispra_shapefiles/
+#    - Contains 3 shapefiles: HPH_*.shp, MPH_*.shp, LPH_*.shp
 
-# Launch Streamlit UI
+# 4. Train models (generates artifacts in models/)
+make train        # Trains both classifier and regressor
+
+# 5. Launch Streamlit UI
 make run-app      # http://localhost:8501
 
-# Serve FastAPI (optional)
+# 6. Serve FastAPI (optional)
 make run-api      # http://localhost:8000/docs
 ```
+
+### Data Setup
+
+For detailed data download and setup instructions:
+```bash
+make help-data    # Show data loading instructions
+```
+
+Or see [data/README.md](data/README.md) for complete documentation.
 
 ### Project Structure
 
