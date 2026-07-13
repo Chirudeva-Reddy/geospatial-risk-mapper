@@ -12,12 +12,16 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, mean_squared_error
 from sklearn.model_selection import train_test_split
+from tqdm import tqdm
 
 from .config import settings
 from .data import load_and_validate
 from .features import add_spatial_features, engineer_features
 
 logger = logging.getLogger(__name__)
+
+# Suppress tqdm in non-interactive environments
+tqdm.pandas(disable=True)
 
 
 def train_classifier(
@@ -240,23 +244,51 @@ def train_and_save_all(
     Returns:
         Dictionary with both classifier and regressor results.
     """
+    print("\n" + "=" * 70)
+    print("GEOSPATIAL FLOOD RISK MAPPER - MODEL TRAINING PIPELINE")
+    print("=" * 70)
+
     # Load data
+    print("\n[1/5] Loading geospatial data...")
+    print("      - Loading NUTS 2 administrative boundaries...")
+    print("      - Loading ISPRA flood hazard shapefiles (HPH, MPH, LPH)...")
+    print("      - This may take a few minutes for large datasets...")
     nuts_gdf, flood_gdf = load_and_validate(nuts_path, flood_path)
+    print(f"      ✓ Loaded {len(nuts_gdf)} regions and {len(flood_gdf)} hazard polygons")
 
     # Engineer features
+    print("\n[2/5] Engineering spatial features...")
+    print("      - Performing spatial joins...")
+    print("      - Computing flood exposure metrics...")
     features_df, target_class = engineer_features(nuts_gdf, flood_gdf)
     features_df = add_spatial_features(features_df)
+    print(f"      ✓ Created {len(features_df.columns)} features for {len(features_df)} regions")
 
     # Create continuous target from flood_fraction
     target_continuous = features_df["flood_fraction"]
 
     # Train both models
+    print("\n[3/5] Training RandomForest Classifier (3-class risk)...")
     classifier_dict = train_classifier(features_df, target_class)
+    print(f"      ✓ Classifier accuracy: {classifier_dict['metrics']['accuracy']:.2%}")
+
+    print("\n[4/5] Training RandomForest Regressor (continuous score)...")
     regressor_dict = train_regressor(features_df, target_continuous)
+    print(f"      ✓ Regressor MAE: {regressor_dict['metrics']['mae']:.4f}")
 
     # Save both
+    print("\n[5/5] Saving model artifacts...")
     save_model(classifier_dict, model_dir, "classifier")
     save_model(regressor_dict, model_dir, "regressor")
+    print("      ✓ Models saved to models/ directory")
+
+    print("\n" + "=" * 70)
+    print("TRAINING COMPLETE")
+    print("=" * 70)
+    print("\nNext steps:")
+    print("  - Launch Streamlit UI: make run-app")
+    print("  - Serve FastAPI: make run-api")
+    print("=" * 70 + "\n")
 
     return {
         "classifier": classifier_dict,
