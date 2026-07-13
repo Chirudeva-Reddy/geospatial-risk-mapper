@@ -65,7 +65,8 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
     Reprojects to target CRS.
 
     Args:
-        path: Path to local GeoPackage or shapefile with ISPRA flood data.
+        path: Path to local shapefile with ISPRA flood data.
+              Can be path to .shp file or directory containing shapefile.
               Required — no automatic download available.
 
     Returns:
@@ -83,14 +84,31 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
             "   https://idrogeo.isprambiente.it/app/page/open-data\n"
             "2. Or use Italian Geoportal:\n"
             "   https://geodati.gov.it/ (search 'pericolosità idraulica')\n"
-            "3. Download as GeoPackage (.gpkg) or Shapefile\n"
-            "4. Pass path to load_ispra_flood_hazard(path='path/to/file.gpkg')\n"
+            "3. Download as Shapefile (multiple files: .shp, .shx, .dbf, .prj, etc.)\n"
+            "4. Pass path to shapefile directory or .shp file:\n"
+            "   load_ispra_flood_hazard(path='path/to/shapefile.shp')\n"
+            "   or\n"
+            "   load_ispra_flood_hazard(path='path/to/shapefile_directory')\n"
             "\nFor WMS access (advanced):\n"
             "https://www.isprambiente.gov.it/en/geospatial-data-and-maps"
         )
 
     path = Path(path)
-    if not path.exists():
+    
+    # Handle both .shp file and directory containing shapefile
+    if path.is_dir():
+        # Find .shp file in directory
+        shp_files = list(path.glob("*.shp"))
+        if not shp_files:
+            raise FileNotFoundError(
+                f"No shapefile (.shp) found in directory: {path}"
+            )
+        if len(shp_files) > 1:
+            logger.warning(
+                f"Multiple shapefiles found in {path}. Using first: {shp_files[0]}"
+            )
+        path = shp_files[0]
+    elif not path.exists():
         raise FileNotFoundError(f"ISPRA flood data file not found: {path}")
 
     logger.info(f"Loading ISPRA flood hazard from {path}")

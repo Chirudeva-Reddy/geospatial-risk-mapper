@@ -66,7 +66,7 @@ data/                 # Raw geodata (gitignored; download script in README)
 
 - **Flood Hazard**: ISPRA National Mosaic of Flood Hazard Areas (Aree a pericolosità idraulica)
   - Risk classes: P1 (low), P2 (medium), P3 (high)
-  - Format: Vector polygons (GeoPackage or Shapefile)
+  - Format: Shapefile (.shp, .shx, .dbf, .prj)
   - License: CC BY-SA 4.0 IT
   - Download: https://idrogeo.isprambiente.it/app/page/open-data (IdroGEO platform)
 

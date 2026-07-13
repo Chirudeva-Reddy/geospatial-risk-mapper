@@ -57,7 +57,7 @@
 
 **Data Source**:
 - **Boundaries**: Eurostat GISCO (https://datahub.io/core/geo-nuts-administrative-boundaries/)
-- **Flood Data**: ISPRA IdroGEO (https://idrogeo.isprambiente.it/app/page/open-data)
+- **Flood Data**: ISPRA IdroGEO Shapefile (https://idrogeo.isprambiente.it/app/page/open-data)
 - **License**: CC-BY (NUTS), CC BY-SA 4.0 IT (ISPRA)
 
 **Preprocessing**:

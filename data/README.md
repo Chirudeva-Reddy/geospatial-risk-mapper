@@ -68,30 +68,46 @@ nuts_gdf = load_nuts_boundaries()  # Auto-downloads from datahub.io
 
 ### ISPRA Flood Data (Manual Download Required)
 
-ISPRA flood hazard data must be **manually downloaded** and provided locally. Two options:
+ISPRA flood hazard data must be **manually downloaded** and provided locally as **Shapefile format**. Two options:
 
 #### Option 1: IdroGEO (Recommended - Official ISPRA Platform)
 1. Visit: https://idrogeo.isprambiente.it/app/page/open-data
 2. Navigate to "Flood Hazard Areas" (Aree a pericolosità idraulica)
-3. Download as GeoPackage (.gpkg) or Shapefile
-4. Load into pipeline:
+3. Download as **Shapefile** (will contain .shp, .shx, .dbf, .prj, etc.)
+4. Extract the downloaded ZIP file
+5. Load into pipeline:
    ```python
    from geo_risk.data import load_and_validate
    
+   # Option A: Pass path to .shp file
    nuts_gdf, flood_gdf = load_and_validate(
-       flood_path="path/to/ispra_flood_hazard.gpkg"
+       flood_path="path/to/ispra_flood_hazard.shp"
+   )
+   
+   # Option B: Pass path to directory containing shapefile
+   nuts_gdf, flood_gdf = load_and_validate(
+       flood_path="path/to/shapefile_directory"
    )
    ```
 
 #### Option 2: Italian National Geoportal (Geoportale Nazionale)
 1. Visit: https://geodati.gov.it/
 2. Search for "pericolosità idraulica" or "Aree a pericolosità idraulica"
-3. Download as GeoPackage (.gpkg) or Shapefile
-4. Load as above
+3. Download as **Shapefile**
+4. Extract and load as above
 
 #### Option 3: WMS Service (Advanced - Direct Access)
 - ISPRA Geospatial Data: https://www.isprambiente.gov.it/en/geospatial-data-and-maps
 - Requires manual WMS query (not automated in this pipeline)
+
+**Shapefile Format Note**: ISPRA provides data as Shapefile, which consists of multiple files:
+- `.shp` — Geometry (required)
+- `.shx` — Shape index (required)
+- `.dbf` — Attribute data (required)
+- `.prj` — Projection info (required)
+- `.cpg` — Code page (optional)
+
+Keep all files together in the same directory.
 
 **Why manual?** ISPRA data is large (~500 MB national mosaic) and requires proper attribution. Manual download ensures compliance with CC BY-SA 4.0 IT license.
 
