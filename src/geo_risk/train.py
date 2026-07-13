@@ -12,16 +12,12 @@ import pandas as pd
 from sklearn.ensemble import RandomForestClassifier, RandomForestRegressor
 from sklearn.metrics import accuracy_score, f1_score, mean_absolute_error, mean_squared_error
 from sklearn.model_selection import train_test_split
-from tqdm import tqdm
 
 from .config import settings
 from .data import load_and_validate
 from .features import add_spatial_features, engineer_features
 
 logger = logging.getLogger(__name__)
-
-# Suppress tqdm in non-interactive environments
-tqdm.pandas(disable=True)
 
 
 def train_classifier(
