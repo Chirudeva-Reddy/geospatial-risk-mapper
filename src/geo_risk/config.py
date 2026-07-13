@@ -14,10 +14,13 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
-    app_name: str = "project-name"
+    app_name: str = "geospatial-risk-mapper"
     log_level: str = "INFO"
     data_dir: str = "./data"
-    # Add project-specific settings here.
+    models_dir: str = "./models"
+    region: str = "Italy"  # Geographic region
+    target_crs: str = "EPSG:4326"  # WGS84
+    random_state: int = 42
 
 
 settings = Settings()

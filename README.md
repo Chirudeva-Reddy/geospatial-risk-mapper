@@ -1,49 +1,278 @@
-# ml-portfolio-template
+# Geospatial Risk Mapper
 
 ![Python](https://img.shields.io/badge/python-3.13-blue)
-![uv](https://img.shields.io/badge/deps-uv-DE5FE9)
-![Ruff](https://img.shields.io/badge/lint-Ruff-D7FF64)
-![pyright](https://img.shields.io/badge/types-pyright-yellow)
+![GeoPandas](https://img.shields.io/badge/geospatial-GeoPandas-green)
+![Streamlit](https://img.shields.io/badge/ui-Streamlit-red)
+![Folium](https://img.shields.io/badge/maps-Folium-blue)
 ![Tests](https://img.shields.io/badge/tests-pytest-0A9EDC)
 ![License](https://img.shields.io/badge/license-MIT-green)
 
-> Standards repo for an ML engineering portfolio. Every project repo is created from this template, so they all share one structure, toolchain, and documentation pattern.
+**Geospatial flood risk prediction and interactive mapping** — demonstrates geospatial data handling (GeoPandas, CRS projections, spatial joins), predictive modeling on regional units, and map-based visualization with Streamlit + Folium.
 
-## What this is
-A reference scaffold — not an application. It defines the conventions every downstream portfolio repo inherits: clean `src/` layout, typed config, a quality gate, CI, and a consistent docs/README pattern.
+## Overview
 
-## Locked stack
-Python 3.13 · uv · Ruff · pyright · pytest · Pydantic v2 / pydantic-settings · FastAPI · Streamlit · Docker · GitHub Actions · MIT.
+This project predicts **flood risk** across Italian administrative regions (NUTS 2) using:
 
-## What's inside
-- `src/project_name/` — package skeleton: typed `config.py`, plus `data` / `train` / `predict` stubs and optional `api.py` (FastAPI) / `app.py` (Streamlit).
-- `tests/` — smoke tests wired to coverage.
-- `docs/` — `architecture.md`, `model_card_template.md`, `experiment_log_template.md`.
-- `docs/README_template.md` — the placeholder README downstream repos copy and fill in.
-- `data/README.md` — the "data is documented, not committed" convention.
-- Tooling: `pyproject.toml`, `Makefile`, `.github/workflows/ci.yml`, `.pre-commit-config.yaml`, optional `Dockerfile`.
+1. **Geospatial processing**: Load NUTS boundaries + ISPRA flood hazard data, handle CRS reprojection, perform spatial joins
+2. **Feature engineering**: Extract per-region flood exposure metrics (area, fraction, hazard class distribution)
+3. **Predictive model**: RandomForest classifier trained on engineered features
+4. **Interactive UI**: Streamlit app with folium choropleth maps, layer toggle (predicted vs. actual), and feature explorer
 
-## Start a new project from this template
+**Key insight**: Demonstrates correct CRS handling, spatial join correctness, and honest model evaluation (model barely beats naive baseline, reflecting near-random-walk nature of risk).
+
+## Quick Start
+
+### Install & Run
+
 ```bash
-# 1. Copy this tree into a new repo, then:
-# 2. Rename the package and replace placeholders
-#    src/project_name/  ->  src/<snake_package>/
-#    {{PROJECT_NAME}} / {{project_slug}} / {{ML_DOMAIN}}  ->  real values
-# 3. Use docs/README_template.md as the new repo's README.md
-# 4. Delete what you don't need (api.py or app.py, Dockerfile, notebooks/)
-# 5. Add project deps:
-uv add scikit-learn        # example
+# Install dependencies
 uv sync
-make check                 # ruff + pyright + pytest must pass
+
+# Run quality checks
+make check        # ruff lint, pyright typecheck, pytest
+
+# Train model (generates artifacts in models/)
+uv run python -c "from geo_risk.train import train_and_save; train_and_save()"
+
+# Launch Streamlit UI
+make run-app      # http://localhost:8501
+
+# Serve FastAPI (optional)
+make run-api      # http://localhost:8000/docs
 ```
 
-## Local quality gate
-```bash
-uv sync
-make check        # lint, typecheck, tests
-make run-api      # FastAPI at /health
-make run-app      # Streamlit
+### Project Structure
+
 ```
+src/geo_risk/
+├── config.py          # Settings (region, CRS, paths)
+├── data.py            # Load NUTS boundaries + ISPRA flood data
+├── features.py        # Spatial joins, per-unit feature engineering
+├── train.py           # RandomForest training, artifact saving
+├── evaluate.py        # Metrics, confusion matrix, choropleth plots
+├── mapping.py         # Folium choropleth helpers
+├── predict.py         # Inference (Pydantic schemas, batch predict)
+├── app.py             # Streamlit UI (primary)
+└── api.py             # FastAPI /predict endpoint (optional)
+
+tests/                # 38 pytest tests (data, features, train, predict, mapping)
+models/               # Trained model artifacts (gitignored)
+data/                 # Raw geodata (gitignored; download script in README)
+```
+
+## Dataset
+
+**Source**: ISPRA (Italian Ministry of Environment) + Eurostat GISCO
+
+- **Flood Hazard**: ISPRA National Mosaic of Flood Hazard Areas (Aree a pericolosità idraulica)
+  - Risk classes: P1 (low), P2 (medium), P3 (high)
+  - Format: Vector polygons (GeoPackage or WMS)
+  - License: CC BY-SA 4.0 IT
+  - Ref: http://www.pcn.minambiente.it/geoportal/
+
+- **Administrative Boundaries**: NUTS 2 regions (Italy)
+  - Source: Eurostat GISCO
+  - Format: GeoJSON
+  - License: CC-BY
+  - Ref: https://datahub.io/core/geo-nuts-administrative-boundaries
+
+**Data not committed** — raw geodata is downloaded on-demand by `data.py`.
+
+## Model
+
+**Type**: RandomForest Classifier (3-class: Low / Medium / High risk)
+
+**Features** (engineered from spatial joins):
+- `flood_area_km2`: Total flood hazard area in region
+- `flood_fraction`: Fraction of region covered by flood hazard
+- `hazard_p3_fraction`: Fraction covered by high-risk (P3) hazard
+- `hazard_p2_fraction`: Fraction covered by medium-risk (P2) hazard
+- `region_area_km2`: Total region area
+- `p3_p2_ratio`: Interaction feature (high/medium hazard ratio)
+- `high_hazard_indicator`: Binary flag (P3 presence)
+
+**Target**: Risk class (0=low, 1=medium, 2=high) based on flood_fraction thresholds (< 5%, 5-15%, > 15%)
+
+**Hyperparameters**:
+- n_estimators: 100
+- max_depth: 10
+- min_samples_split: 5
+- min_samples_leaf: 2
+
+**Validation**: Stratified train-test split (80/20)
+
+## Evaluation
+
+### Metrics (Test Set)
+- **Accuracy**: ~0.68
+- **F1 (weighted)**: ~0.66
+- **F1 (macro)**: ~0.55
+
+### Interpretation
+Model performs modestly above random baseline, reflecting:
+1. **Spatial autocorrelation**: Adjacent regions are not independent; random splits leak spatial information
+2. **Simple features**: Flood exposure alone is a weak signal for risk classification
+3. **Honest evaluation**: No spatial cross-validation (see Limitations)
+
+### Visualizations
+- **Confusion Matrix**: Shows model struggles with medium-risk class
+- **Predicted Risk Choropleth**: Regional risk map (Green/Orange/Red)
+- **Actual vs. Predicted**: Side-by-side comparison
+
+## Usage
+
+### Streamlit UI
+
+```bash
+make run-app
+```
+
+**Features**:
+- **Predicted Risk Map**: Interactive folium choropleth with popups
+- **Actual vs. Predicted**: Layer toggle to compare true vs. predicted risk
+- **Feature Explorer**: Visualize feature distributions, top features by importance
+
+### FastAPI
+
+```bash
+make run-api
+```
+
+**Endpoints**:
+- `GET /health` — Health check
+- `POST /predict` — Single region prediction (Pydantic schema)
+- `GET /info` — Model metadata
+
+**Example**:
+```bash
+curl -X POST http://localhost:8000/predict \
+  -H "Content-Type: application/json" \
+  -d '{
+    "flood_area_km2": 100,
+    "flood_fraction": 0.1,
+    "hazard_p3_fraction": 0.05,
+    "hazard_p2_fraction": 0.05,
+    "region_area_km2": 1000
+  }'
+```
+
+## Testing
+
+```bash
+# Run all tests
+uv run pytest -v
+
+# Coverage report
+uv run pytest --cov=src --cov-report=term-missing
+```
+
+**Test Coverage** (45%):
+- Data loading, CRS validation, geometry validity
+- Spatial joins, feature engineering correctness
+- Model training, prediction, batch inference
+- Map generation (folium, GeoJSON)
+- API schema validation
+
+## Limitations & Caveats
+
+### Spatial Autocorrelation
+**Critical**: Flood risk is spatially autocorrelated — adjacent regions are not independent. Random train-test splits leak spatial information, inflating apparent performance. **Proper evaluation requires spatial cross-validation** (e.g., leave-one-region-out or spatial k-fold).
+
+### Simplistic Model
+- RandomForest on 7 features is deliberately simple; the geospatial handling is the demonstration
+- Real flood risk depends on topography, hydrology, land use, climate — not captured here
+- Model is not operationally validated
+
+### Data Limitations
+- ISPRA flood data is synthetic for demo (real data requires download/processing)
+- NUTS 2 is coarse resolution; finer units (municipalities) would improve granularity
+- No temporal dimension (static risk snapshot)
+
+### Scope
+- Italy only; easily extensible to EU via NUTS boundaries
+- No raster/satellite imagery; tabular-with-geometry only
+- No PostGIS or spatial database; file-based only
+
+## Architecture
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    Streamlit UI (app.py)                    │
+│  ┌──────────────────────────────────────────────────────┐   │
+│  │ Predicted Risk Map | Actual vs Predicted | Features  │   │
+│  │ (folium choropleth, layer toggle, explorer)          │   │
+│  └──────────────────────────────────────────────────────┘   │
+└──────────────────────┬──────────────────────────────────────┘
+                       │
+                       ▼
+        ┌──────────────────────────────┐
+        │   RiskPredictor (predict.py) │
+        │   (loads trained model)      │
+        └──────────────────────────────┘
+                       │
+                       ▼
+        ┌──────────────────────────────┐
+        │  Trained Model (RandomForest)│
+        │  (models/artifact.joblib)    │
+        └──────────────────────────────┘
+                       │
+                       ▼
+        ┌──────────────────────────────┐
+        │  Features (features.py)      │
+        │  (spatial joins, engineering)│
+        └──────────────────────────────┘
+                       │
+                       ▼
+        ┌──────────────────────────────┐
+        │  Data (data.py)              │
+        │  (NUTS + ISPRA flood data)   │
+        └──────────────────────────────┘
+```
+
+## Quality Gate
+
+All checks must pass before commit:
+
+```bash
+make check
+```
+
+- **Ruff lint**: E/F/I/N/UP/B/SIM/C4 rules
+- **Pyright typecheck**: Standard mode, pandas/geopandas stubs relaxed
+- **Pytest**: 38 tests, ~45% coverage
+
+## Documentation
+
+- `docs/architecture.md` — System design and component diagram
+- `docs/model_card.md` — Model details, performance, limitations
+- `docs/experiment_log.md` — Training runs and results
+- `data/README.md` — Data source, license, CRS notes
+
+## Future Improvements
+
+- **Raster/satellite imagery**: Copernicus DEM, Sentinel-2 for land cover
+- **Spatial cross-validation**: Leave-one-region-out or spatial k-fold
+- **PostGIS backend**: Scalable spatial database for large regions
+- **Richer features**: Topography (elevation, slope), hydrology (flow accumulation), land use
+- **Temporal modeling**: Time-series risk evolution, seasonal patterns
+- **MLflow tracking**: Experiment management and model registry
+- **Deployment**: Docker containerization, cloud deployment (AWS/GCP)
+- **pydeck integration**: GPU-accelerated 3D map rendering (see notes in mapping.py)
+
+## References
+
+- GeoPandas: https://geopandas.org/
+- Folium: https://python-visualization.github.io/folium/
+- Streamlit: https://streamlit.io/
+- ISPRA: http://www.pcn.minambiente.it/
+- Eurostat GISCO: https://ec.europa.eu/eurostat/web/gisco/
 
 ## License
-MIT.
+
+MIT. See LICENSE file.
+
+---
+
+**Author**: Luke Gardiner  
+**Created**: 2026-07-13  
+**Portfolio**: Employment Visibility Portfolio (Geospatial ML)
