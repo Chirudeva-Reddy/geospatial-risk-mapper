@@ -240,51 +240,114 @@ def train_and_save_all(
     Returns:
         Dictionary with both classifier and regressor results.
     """
-    print("\n" + "=" * 70)
-    print("GEOSPATIAL FLOOD RISK MAPPER - MODEL TRAINING PIPELINE")
-    print("=" * 70)
+    try:
+        print("\n" + "=" * 70)
+        print("GEOSPATIAL FLOOD RISK MAPPER - MODEL TRAINING PIPELINE")
+        print("=" * 70)
 
-    # Load data
-    print("\n[1/5] Loading geospatial data...")
-    print("      - Loading NUTS 2 administrative boundaries...")
-    print("      - Loading ISPRA flood hazard shapefiles (HPH, MPH, LPH)...")
-    print("      - This may take a few minutes for large datasets...")
-    nuts_gdf, flood_gdf = load_and_validate(nuts_path, flood_path)
-    print(f"      ✓ Loaded {len(nuts_gdf)} regions and {len(flood_gdf)} hazard polygons")
+        # Load data
+        print("\n[1/5] Loading geospatial data...")
+        print("      - Loading NUTS 2 administrative boundaries...")
+        try:
+            print("      - Loading ISPRA flood hazard shapefiles (HPH, MPH, LPH)...")
+            print("      - This may take a few minutes for large datasets...")
+            print("      - Processing: ", end="", flush=True)
+            nuts_gdf, flood_gdf = load_and_validate(nuts_path, flood_path)
+            print("done")
+            print(f"      ✓ Loaded {len(nuts_gdf)} regions and {len(flood_gdf)} hazard polygons")
+        except FileNotFoundError as e:
+            print("\n      ✗ ERROR: Data files not found")
+            print(f"      {str(e)}")
+            raise
+        except Exception as e:
+            print("\n      ✗ ERROR: Failed to load data")
+            print(f"      {type(e).__name__}: {str(e)}")
+            raise
 
-    # Engineer features
-    print("\n[2/5] Engineering spatial features...")
-    print("      - Performing spatial joins...")
-    print("      - Computing flood exposure metrics...")
-    features_df, target_class = engineer_features(nuts_gdf, flood_gdf)
-    features_df = add_spatial_features(features_df)
-    print(f"      ✓ Created {len(features_df.columns)} features for {len(features_df)} regions")
+        # Engineer features
+        print("\n[2/5] Engineering spatial features...")
+        print("      - Performing spatial joins...")
+        try:
+            print("      - Computing flood exposure metrics...")
+            print("      - Processing: ", end="", flush=True)
+            features_df, target_class = engineer_features(nuts_gdf, flood_gdf)
+            features_df = add_spatial_features(features_df)
+            print("done")
+            print(f"      ✓ Created {len(features_df.columns)} features for {len(features_df)} regions")
+        except Exception as e:
+            print("\n      ✗ ERROR: Feature engineering failed")
+            print(f"      {type(e).__name__}: {str(e)}")
+            raise
 
-    # Create continuous target from flood_fraction
-    target_continuous = features_df["flood_fraction"]
+        # Create continuous target from flood_fraction
+        target_continuous = features_df["flood_fraction"]
 
-    # Train both models
-    print("\n[3/5] Training RandomForest Classifier (3-class risk)...")
-    classifier_dict = train_classifier(features_df, target_class)
-    print(f"      ✓ Classifier accuracy: {classifier_dict['metrics']['accuracy']:.2%}")
+        # Train both models
+        print("\n[3/5] Training RandomForest Classifier (3-class risk)...")
+        try:
+            print("      - Processing: ", end="", flush=True)
+            classifier_dict = train_classifier(features_df, target_class)
+            print("done")
+            print(f"      ✓ Classifier accuracy: {classifier_dict['metrics']['accuracy']:.2%}")
+        except Exception as e:
+            print("\n      ✗ ERROR: Classifier training failed")
+            print(f"      {type(e).__name__}: {str(e)}")
+            raise
 
-    print("\n[4/5] Training RandomForest Regressor (continuous score)...")
-    regressor_dict = train_regressor(features_df, target_continuous)
-    print(f"      ✓ Regressor MAE: {regressor_dict['metrics']['mae']:.4f}")
+        print("\n[4/5] Training RandomForest Regressor (continuous score)...")
+        try:
+            print("      - Processing: ", end="", flush=True)
+            regressor_dict = train_regressor(features_df, target_continuous)
+            print("done")
+            print(f"      ✓ Regressor MAE: {regressor_dict['metrics']['mae']:.4f}")
+        except Exception as e:
+            print("\n      ✗ ERROR: Regressor training failed")
+            print(f"      {type(e).__name__}: {str(e)}")
+            raise
 
-    # Save both
-    print("\n[5/5] Saving model artifacts...")
-    save_model(classifier_dict, model_dir, "classifier")
-    save_model(regressor_dict, model_dir, "regressor")
-    print("      ✓ Models saved to models/ directory")
+        # Save both
+        print("\n[5/5] Saving model artifacts...")
+        try:
+            print("      - Processing: ", end="", flush=True)
+            save_model(classifier_dict, model_dir, "classifier")
+            save_model(regressor_dict, model_dir, "regressor")
+            print("done")
+            print("      ✓ Models saved to models/ directory")
+        except Exception as e:
+            print("\n      ✗ ERROR: Failed to save models")
+            print(f"      {type(e).__name__}: {str(e)}")
+            raise
 
-    print("\n" + "=" * 70)
-    print("TRAINING COMPLETE")
-    print("=" * 70)
-    print("\nNext steps:")
-    print("  - Launch Streamlit UI: make run-app")
-    print("  - Serve FastAPI: make run-api")
-    print("=" * 70 + "\n")
+        print("\n" + "=" * 70)
+        print("TRAINING COMPLETE ✓")
+        print("=" * 70)
+        print("\nNext steps:")
+        print("  - Launch Streamlit UI: make run-app")
+        print("  - Serve FastAPI: make run-api")
+        print("=" * 70 + "\n")
+
+        return {
+            "classifier": classifier_dict,
+            "regressor": regressor_dict,
+        }
+
+    except KeyboardInterrupt:
+        print("\n\n✗ Training interrupted by user")
+        print("=" * 70 + "\n")
+        raise
+    except Exception as e:
+        print("\n\n" + "=" * 70)
+        print("TRAINING FAILED ✗")
+        print("=" * 70)
+        print(f"\nError: {type(e).__name__}")
+        print(f"Message: {str(e)}")
+        print("\nTroubleshooting:")
+        print("  1. Check data files exist: ls data/ispra_shapefiles/")
+        print("  2. Verify FLOOD_PATH is correct: make train FLOOD_PATH=data/ispra_shapefiles/")
+        print("  3. Check disk space and memory availability")
+        print("  4. Review data/README.md for download instructions")
+        print("=" * 70 + "\n")
+        raise
 
     return {
         "classifier": classifier_dict,
