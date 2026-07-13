@@ -119,7 +119,7 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
     }
 
     gdfs = []
-    for hazard_class, (prefix, description) in hazard_classes.items():
+    for i, (hazard_class, (prefix, description)) in enumerate(hazard_classes.items(), start=1):
         shp_files = list(path.glob(f"{prefix}_*.shp"))
         if not shp_files:
             raise FileNotFoundError(
@@ -131,8 +131,16 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
             )
 
         shp_path = shp_files[0]
-        logger.info(f"Loading {description} from {shp_path}")
+        size_mb = shp_path.stat().st_size / (1024 * 1024)
+        print(
+            f"        ({i}/3) Reading {prefix} shapefile [{description}] "
+            f"({size_mb:.0f} MB)...",
+            end=" ",
+            flush=True,
+        )
+        logger.info(f"Loading {description} from {shp_path} ({size_mb:.0f} MB)")
         gdf = gpd.read_file(shp_path)  # type: ignore
+        print(f"done ({len(gdf)} polygons)")
 
         # Validate CRS
         if gdf.crs is None:
@@ -143,13 +151,17 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
 
         # Reproject to target CRS
         if gdf.crs != settings.target_crs:
+            print(f"            Reprojecting to {settings.target_crs}...", end=" ", flush=True)
             logger.info(f"Reprojecting {description} to {settings.target_crs}")
             gdf = gdf.to_crs(settings.target_crs)
+            print("done")
 
         gdfs.append(gdf)
 
     # Combine all hazard classes
+    print("        Combining hazard classes...", end=" ", flush=True)
     combined_gdf = pd.concat(gdfs, ignore_index=True)
+    print("done")
     logger.info(
         f"Loaded {len(combined_gdf)} flood hazard polygons "
         f"(P3: {len(gdfs[0])}, P2: {len(gdfs[1])}, P1: {len(gdfs[2])})"
@@ -184,13 +196,30 @@ def load_and_validate(
         )
 
     # Validate geometries
-    if not nuts_gdf.geometry.is_valid.all():
-        logger.warning("Some NUTS geometries are invalid; attempting fix")
+    print("        Validating NUTS geometries...", end=" ", flush=True)
+    nuts_valid = nuts_gdf.geometry.is_valid
+    print("done")
+    if not nuts_valid.all():
+        n_invalid = int((~nuts_valid).sum())
+        print(f"        Fixing {n_invalid} invalid NUTS geometries (buffer(0))...", end=" ", flush=True)
+        logger.warning(f"{n_invalid} NUTS geometries are invalid; attempting fix")
         nuts_gdf.geometry = nuts_gdf.geometry.buffer(0)
+        print("done")
 
-    if not flood_gdf.geometry.is_valid.all():
-        logger.warning("Some flood geometries are invalid; attempting fix")
+    print(
+        f"        Validating {len(flood_gdf)} flood geometries "
+        "(this can take a while for large national mosaics)...",
+        end=" ",
+        flush=True,
+    )
+    flood_valid = flood_gdf.geometry.is_valid
+    print("done")
+    if not flood_valid.all():
+        n_invalid = int((~flood_valid).sum())
+        print(f"        Fixing {n_invalid} invalid flood geometries (buffer(0))...", end=" ", flush=True)
+        logger.warning(f"{n_invalid} flood geometries are invalid; attempting fix")
         flood_gdf.geometry = flood_gdf.geometry.buffer(0)
+        print("done")
 
     logger.info(
         f"Loaded {len(nuts_gdf)} NUTS regions and {len(flood_gdf)} flood areas"

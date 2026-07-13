@@ -40,55 +40,65 @@ def engineer_features(
     if nuts_gdf.crs != flood_gdf.crs:
         raise ValueError(f"CRS mismatch: {nuts_gdf.crs} != {flood_gdf.crs}")
 
+    # Region area in km² (rough approximation: degrees to km at equator ~111 km/degree)
+    region_area_km2 = (nuts_gdf.set_index("NUTS_ID").geometry.area * 111 * 111).rename(
+        "region_area_km2"
+    )
+
     # Spatial join: find flood areas within each NUTS region
-    logger.info("Performing spatial join (NUTS intersect flood hazard)")
+    logger.info(
+        f"Performing spatial join ({len(nuts_gdf)} regions x {len(flood_gdf)} hazard polygons)"
+    )
     joined = gpd.sjoin(
         nuts_gdf[["NUTS_ID", "geometry"]],
         flood_gdf[["hazard_class", "area_km2", "geometry"]],
         how="left",
         predicate="intersects",
     )
+    logger.info(f"Spatial join produced {len(joined)} matched rows")
 
-    # Aggregate flood features per NUTS region
-    features_list = []
-    for nuts_id in nuts_gdf["NUTS_ID"]:
-        region_data = joined[joined["NUTS_ID"] == nuts_id]
-        region_geom = nuts_gdf[nuts_gdf["NUTS_ID"] == nuts_id].geometry.iloc[0]
+    # Aggregate flood area per region (vectorized groupby, not a per-region Python loop)
+    logger.info("Aggregating flood exposure per region (groupby)")
+    total_flood_area = joined.groupby("NUTS_ID")["area_km2"].sum().rename("flood_area_km2")
+    p3_area = (
+        joined[joined["hazard_class"] == "P3"]
+        .groupby("NUTS_ID")["area_km2"]
+        .sum()
+        .rename("p3_area_km2")
+    )
+    p2_area = (
+        joined[joined["hazard_class"] == "P2"]
+        .groupby("NUTS_ID")["area_km2"]
+        .sum()
+        .rename("p2_area_km2")
+    )
 
-        # Calculate region area in km²
-        # Use simple area approximation (degrees to km at equator ~111 km/degree)
-        region_area_km2 = region_geom.area * 111 * 111  # Rough approximation
+    # Combine into a single features frame, filling regions with no matches as 0
+    features_df = pd.concat([region_area_km2, total_flood_area, p3_area, p2_area], axis=1)
+    features_df[["flood_area_km2", "p3_area_km2", "p2_area_km2"]] = features_df[
+        ["flood_area_km2", "p3_area_km2", "p2_area_km2"]
+    ].fillna(0.0)
 
-        if len(region_data) == 0:
-            # No flood hazard in region
-            flood_area_km2 = 0.0
-            flood_fraction = 0.0
-            hazard_p3_fraction = 0.0
-            hazard_p2_fraction = 0.0
-        else:
-            # Sum flood areas
-            flood_area_km2 = region_data["area_km2"].sum()
-            flood_fraction = min(flood_area_km2 / region_area_km2, 1.0)
+    features_df["flood_fraction"] = (
+        features_df["flood_area_km2"] / features_df["region_area_km2"]
+    ).clip(upper=1.0)
+    features_df["hazard_p3_fraction"] = (
+        features_df["p3_area_km2"] / features_df["region_area_km2"]
+    ).clip(upper=1.0)
+    features_df["hazard_p2_fraction"] = (
+        features_df["p2_area_km2"] / features_df["region_area_km2"]
+    ).clip(upper=1.0)
 
-            # Fraction by hazard class
-            p3_area = region_data[region_data["hazard_class"] == "P3"]["area_km2"].sum()
-            p2_area = region_data[region_data["hazard_class"] == "P2"]["area_km2"].sum()
-            hazard_p3_fraction = min(p3_area / region_area_km2, 1.0)
-            hazard_p2_fraction = min(p2_area / region_area_km2, 1.0)
-
-        features_list.append(
-            {
-                "NUTS_ID": nuts_id,
-                "flood_area_km2": flood_area_km2,
-                "flood_fraction": flood_fraction,
-                "hazard_p3_fraction": hazard_p3_fraction,
-                "hazard_p2_fraction": hazard_p2_fraction,
-                "region_area_km2": region_area_km2,
-            }
-        )
-
-    features_df = pd.DataFrame(features_list)
-    features_df.set_index("NUTS_ID", inplace=True)
+    features_df = features_df[
+        [
+            "flood_area_km2",
+            "flood_fraction",
+            "hazard_p3_fraction",
+            "hazard_p2_fraction",
+            "region_area_km2",
+        ]
+    ]
+    features_df.index.name = "NUTS_ID"
 
     # Create target: flood risk class based on flood_fraction
     # 0 = low (< 5%), 1 = medium (5-15%), 2 = high (> 15%)
