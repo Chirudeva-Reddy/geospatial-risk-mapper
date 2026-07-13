@@ -31,11 +31,11 @@ def create_risk_choropleth(
     """
     # Prepare data
     map_data = nuts_gdf[["NUTS_ID", "geometry"]].copy()
-    map_data["risk_class"] = map_data["NUTS_ID"].map(predictions)
-    map_data["risk_label"] = map_data["risk_class"].map(RISK_LABELS)
+    map_data["risk_class"] = map_data["NUTS_ID"].map(predictions)  # type: ignore
+    map_data["risk_label"] = map_data["risk_class"].map(RISK_LABELS)  # type: ignore
 
     # Convert to GeoJSON
-    geojson_data = json.loads(map_data.to_json())
+    geojson_data = json.loads(map_data.to_json())  # type: ignore
 
     # Calculate center
     bounds = map_data.total_bounds
@@ -65,7 +65,9 @@ def create_risk_choropleth(
     # Add popups with region info
     for _, row in map_data.iterrows():
         folium.Popup(
-            f"<b>{row['NUTS_ID']}</b><br>Risk: {row['risk_label']}<br>Class: {row['risk_class']}",
+            f"<b>{row['NUTS_ID']}</b><br>"
+            f"Risk: {row['risk_label']}<br>"
+            f"Class: {row['risk_class']}",
             max_width=200,
         ).add_to(
             folium.CircleMarker(
@@ -104,11 +106,11 @@ def create_comparison_map(
     """
     # Prepare data
     map_data = nuts_gdf[["NUTS_ID", "geometry"]].copy()
-    map_data["actual_risk"] = map_data["NUTS_ID"].map(actual)
-    map_data["predicted_risk"] = map_data["NUTS_ID"].map(predicted)
+    map_data["actual_risk"] = map_data["NUTS_ID"].map(actual)  # type: ignore
+    map_data["predicted_risk"] = map_data["NUTS_ID"].map(predicted)  # type: ignore
 
     # Convert to GeoJSON
-    geojson_data = json.loads(map_data.to_json())
+    geojson_data = json.loads(map_data.to_json())  # type: ignore
 
     # Calculate center
     bounds = map_data.total_bounds

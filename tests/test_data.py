@@ -77,6 +77,6 @@ def test_nuts_id_filtering():
     gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
 
     # Filter to Italy
-    italy_gdf = gdf[gdf["NUTS_ID"].str.startswith("IT")]
+    italy_gdf = gdf[gdf["NUTS_ID"].str.startswith("IT")]  # type: ignore
     assert len(italy_gdf) == 2
     assert all(italy_gdf["NUTS_ID"].str.startswith("IT"))

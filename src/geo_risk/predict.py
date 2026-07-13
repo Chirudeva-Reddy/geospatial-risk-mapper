@@ -36,7 +36,10 @@ class PredictionResponse(BaseModel):
     """Response schema for flood risk prediction."""
 
     risk_class: int = Field(
-        ..., ge=0, le=2, description="Predicted risk class (0=Low, 1=Medium, 2=High)"
+        ...,
+        ge=0,
+        le=2,
+        description="Predicted risk class (0=Low, 1=Medium, 2=High)",
     )
     risk_label: str = Field(..., description="Human-readable risk label")
     confidence: float = Field(..., ge=0, le=1, description="Confidence score")
@@ -93,7 +96,7 @@ class RiskPredictor:
             raise ValueError(f"Missing features: {missing}")
 
         # Reorder features
-        X = features[self.feature_names].values.reshape(1, -1)
+        X = features[self.feature_names].values.reshape(1, -1)  # type: ignore
 
         # Predict
         risk_class = int(self.model.predict(X)[0])

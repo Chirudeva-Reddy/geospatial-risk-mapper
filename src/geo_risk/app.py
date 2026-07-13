@@ -43,7 +43,6 @@ map_type = st.sidebar.radio(
     help="Choose which map to display",
 )
 
-
 # Load data and model
 @st.cache_resource
 def load_resources():
@@ -80,7 +79,10 @@ if nuts_gdf is None:
     st.stop()
 
 # Make predictions
-predictions = predictor.predict_batch(features_df)
+if predictor is None:
+    st.error("Predictor not loaded")
+    st.stop()
+predictions = predictor.predict_batch(features_df)  # type: ignore
 predictions_series = pd.Series(
     predictions["risk_class"].values,
     index=predictions["NUTS_ID"].values,
@@ -144,16 +146,19 @@ else:  # Feature Explorer
 
     # Feature distribution
     st.subheader("Feature Distributions")
-    feature_cols = st.multiselect(
-        "Select features to visualize",
-        options=features_df.columns.tolist(),
-        default=["flood_fraction", "hazard_p3_fraction"],
-    )
+    if features_df is not None:
+        feature_cols = st.multiselect(
+            "Select features to visualize",
+            options=features_df.columns.tolist(),  # type: ignore
+            default=["flood_fraction", "hazard_p3_fraction"],
+        )
+    else:
+        feature_cols = []
 
     if feature_cols:
         for col in feature_cols:
             st.write(f"**{col}**")
-            st.bar_chart(features_df[col].sort_values(ascending=False).head(10))
+            st.bar_chart(features_df[col].sort_values(ascending=False).head(10))  # type: ignore
 
     # Feature importance
     st.subheader("Top Features by Importance")
@@ -161,7 +166,9 @@ else:  # Feature Explorer
         importance_path = Path("./models/feature_importance.csv")
         if importance_path.exists():
             importance_df = pd.read_csv(importance_path)
-            st.bar_chart(importance_df.set_index("feature")["importance"].head(10))
+            st.bar_chart(
+                importance_df.set_index("feature")["importance"].head(10)
+            )
     except Exception as e:
         st.warning(f"Could not load feature importance: {e}")
 

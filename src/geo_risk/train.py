@@ -53,7 +53,7 @@ def train_model(
     )
 
     logger.info(f"Train: {len(X_train)}, Test: {len(X_test)}")
-    logger.info(f"Target distribution (train): {y_train.value_counts().to_dict()}")
+    logger.info(f"Target distribution (train): {y_train.value_counts().to_dict()}")  # type: ignore
 
     # Train model
     model = RandomForestClassifier(
@@ -83,7 +83,7 @@ def train_model(
         )
     except Exception as e:
         logger.warning(f"Could not compute ROC-AUC: {e}")
-        metrics["roc_auc_ovr"] = None
+        metrics["roc_auc_ovr"] = None  # type: ignore
 
     logger.info(f"Test metrics: {metrics}")
 
@@ -122,10 +122,7 @@ def save_model(
     Returns:
         Path to saved model artifact.
     """
-    if model_dir is None:
-        model_dir = Path(settings.models_dir)
-    else:
-        model_dir = Path(model_dir)
+    model_dir = Path(settings.models_dir) if model_dir is None else Path(model_dir)
 
     model_dir.mkdir(parents=True, exist_ok=True)
 

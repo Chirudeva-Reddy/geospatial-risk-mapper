@@ -36,14 +36,14 @@ def load_nuts_boundaries(path: str | Path | None = None) -> gpd.GeoDataFrame:
             "r/NUTS_RG_60M_2024_4326_LEVL_2.geojson"
         )
         logger.info(f"Loading NUTS boundaries from {url}")
-        gdf = gpd.read_file(url)
+        gdf = gpd.read_file(url)  # type: ignore
     else:
         path = Path(path)
         logger.info(f"Loading NUTS boundaries from {path}")
-        gdf = gpd.read_file(path)
+        gdf = gpd.read_file(path)  # type: ignore
 
     # Filter to Italy (NUTS codes starting with 'IT')
-    gdf = gdf[gdf["NUTS_ID"].str.startswith("IT")].copy()
+    gdf = gdf[gdf["NUTS_ID"].str.startswith("IT")].copy()  # type: ignore
     logger.info(f"Loaded {len(gdf)} NUTS 2 regions for Italy")
 
     # Validate CRS
@@ -77,7 +77,9 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
         # Use ISPRA WMS or download link
         # For this implementation, we'll use a simplified approach:
         # Create synthetic flood hazard data for testing/demo purposes
-        logger.warning("No local ISPRA flood data provided. Using synthetic data for demo.")
+        logger.warning(
+            "No local ISPRA flood data provided. Using synthetic data for demo."
+        )
         gdf = _create_synthetic_flood_data()
     else:
         path = Path(path)
@@ -141,7 +143,9 @@ def load_and_validate(
 
     # Validate CRS match
     if nuts_gdf.crs != flood_gdf.crs:
-        raise ValueError(f"CRS mismatch: NUTS {nuts_gdf.crs} != Flood {flood_gdf.crs}")
+        raise ValueError(
+            f"CRS mismatch: NUTS {nuts_gdf.crs} != Flood {flood_gdf.crs}"
+        )
 
     # Validate geometries
     if not nuts_gdf.geometry.is_valid.all():
@@ -152,5 +156,7 @@ def load_and_validate(
         logger.warning("Some flood geometries are invalid; attempting fix")
         flood_gdf.geometry = flood_gdf.geometry.buffer(0)
 
-    logger.info(f"Loaded {len(nuts_gdf)} NUTS regions and {len(flood_gdf)} flood areas")
+    logger.info(
+        f"Loaded {len(nuts_gdf)} NUTS regions and {len(flood_gdf)} flood areas"
+    )
     return nuts_gdf, flood_gdf
