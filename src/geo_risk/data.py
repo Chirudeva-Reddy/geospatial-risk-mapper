@@ -79,12 +79,14 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
         raise FileNotFoundError(
             "ISPRA flood hazard data must be manually downloaded and provided.\n"
             "Download instructions:\n"
-            "1. Visit: http://www.pcn.minambiente.it/geoportal/\n"
-            "2. Search for 'Aree a pericolosità idraulica' (Flood Hazard Areas)\n"
+            "1. Visit IdroGEO (official ISPRA platform):\n"
+            "   https://idrogeo.isprambiente.it/app/page/open-data\n"
+            "2. Or use Italian Geoportal:\n"
+            "   https://geodati.gov.it/ (search 'pericolosità idraulica')\n"
             "3. Download as GeoPackage (.gpkg) or Shapefile\n"
             "4. Pass path to load_ispra_flood_hazard(path='path/to/file.gpkg')\n"
-            "\nAlternatively, use WMS service:\n"
-            "https://sinacloud.isprambiente.it/arcgisina/rest/services/Alluvioni/"
+            "\nFor WMS access (advanced):\n"
+            "https://www.isprambiente.gov.it/en/geospatial-data-and-maps"
         )
 
     path = Path(path)

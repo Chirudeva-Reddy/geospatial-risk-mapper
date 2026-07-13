@@ -66,9 +66,9 @@ data/                 # Raw geodata (gitignored; download script in README)
 
 - **Flood Hazard**: ISPRA National Mosaic of Flood Hazard Areas (Aree a pericolosità idraulica)
   - Risk classes: P1 (low), P2 (medium), P3 (high)
-  - Format: Vector polygons (GeoPackage or WMS)
+  - Format: Vector polygons (GeoPackage or Shapefile)
   - License: CC BY-SA 4.0 IT
-  - Ref: http://www.pcn.minambiente.it/geoportal/
+  - Download: https://idrogeo.isprambiente.it/app/page/open-data (IdroGEO platform)
 
 - **Administrative Boundaries**: NUTS 2 regions (Italy)
   - Source: Eurostat GISCO

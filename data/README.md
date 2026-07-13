@@ -68,27 +68,32 @@ nuts_gdf = load_nuts_boundaries()  # Auto-downloads from datahub.io
 
 ### ISPRA Flood Data (Manual Download Required)
 
-ISPRA flood hazard data must be **manually downloaded** and provided locally:
+ISPRA flood hazard data must be **manually downloaded** and provided locally. Two options:
 
-1. **Download from ISPRA Geoportal**:
-   - Visit: http://www.pcn.minambiente.it/geoportal/
-   - Search for "Aree a pericolosità idraulica" (Flood Hazard Areas)
-   - Download as GeoPackage (.gpkg) or Shapefile
-
-2. **Load into pipeline**:
+#### Option 1: IdroGEO (Recommended - Official ISPRA Platform)
+1. Visit: https://idrogeo.isprambiente.it/app/page/open-data
+2. Navigate to "Flood Hazard Areas" (Aree a pericolosità idraulica)
+3. Download as GeoPackage (.gpkg) or Shapefile
+4. Load into pipeline:
    ```python
    from geo_risk.data import load_and_validate
-
+   
    nuts_gdf, flood_gdf = load_and_validate(
        flood_path="path/to/ispra_flood_hazard.gpkg"
    )
    ```
 
-3. **Alternative: WMS Service**:
-   - Direct WMS endpoint: https://sinacloud.isprambiente.it/arcgisina/rest/services/Alluvioni/
-   - Requires manual WMS query (not automated in this pipeline)
+#### Option 2: Italian National Geoportal (Geoportale Nazionale)
+1. Visit: https://geodati.gov.it/
+2. Search for "pericolosità idraulica" or "Aree a pericolosità idraulica"
+3. Download as GeoPackage (.gpkg) or Shapefile
+4. Load as above
 
-**Why manual?** ISPRA data is large (~500 MB national mosaic) and requires authentication/licensing verification. Manual download ensures proper attribution and compliance.
+#### Option 3: WMS Service (Advanced - Direct Access)
+- ISPRA Geospatial Data: https://www.isprambiente.gov.it/en/geospatial-data-and-maps
+- Requires manual WMS query (not automated in this pipeline)
+
+**Why manual?** ISPRA data is large (~500 MB national mosaic) and requires proper attribution. Manual download ensures compliance with CC BY-SA 4.0 IT license.
 
 ## Data Processing
 
