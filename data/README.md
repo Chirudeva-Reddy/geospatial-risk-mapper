@@ -56,20 +56,39 @@ All data is reprojected to **EPSG:4326 (WGS84)** for consistency:
 
 ## Data Download
 
-Data is downloaded automatically by the pipeline:
+### NUTS Boundaries (Automatic)
+
+NUTS boundaries are downloaded automatically from Eurostat GISCO:
 
 ```python
-from geo_risk.data import load_and_validate
+from geo_risk.data import load_nuts_boundaries
 
-nuts_gdf, flood_gdf = load_and_validate()
+nuts_gdf = load_nuts_boundaries()  # Auto-downloads from datahub.io
 ```
 
-This function:
-1. Checks for local files (if provided)
-2. Downloads from remote sources if not found
-3. Validates CRS and geometry
-4. Reprojects to target CRS
-5. Filters to Italy (NUTS codes starting with "IT")
+### ISPRA Flood Data (Manual Download Required)
+
+ISPRA flood hazard data must be **manually downloaded** and provided locally:
+
+1. **Download from ISPRA Geoportal**:
+   - Visit: http://www.pcn.minambiente.it/geoportal/
+   - Search for "Aree a pericolosità idraulica" (Flood Hazard Areas)
+   - Download as GeoPackage (.gpkg) or Shapefile
+
+2. **Load into pipeline**:
+   ```python
+   from geo_risk.data import load_and_validate
+
+   nuts_gdf, flood_gdf = load_and_validate(
+       flood_path="path/to/ispra_flood_hazard.gpkg"
+   )
+   ```
+
+3. **Alternative: WMS Service**:
+   - Direct WMS endpoint: https://sinacloud.isprambiente.it/arcgisina/rest/services/Alluvioni/
+   - Requires manual WMS query (not automated in this pipeline)
+
+**Why manual?** ISPRA data is large (~500 MB national mosaic) and requires authentication/licensing verification. Manual download ensures proper attribution and compliance.
 
 ## Data Processing
 
@@ -134,11 +153,11 @@ rm -rf data/raw data/processed
 uv run python -c "from geo_risk.data import load_and_validate; load_and_validate()"
 ```
 
-## Known Issues
+## Known Issues & Workarounds
 
-1. **ISPRA Data Availability**: Real ISPRA data requires manual download or WMS query. For demo purposes, `data.py` creates synthetic flood data.
-2. **Network Dependency**: Datahub.io and ISPRA services may be temporarily unavailable. Local file fallback is supported.
-3. **Large File Sizes**: Full ISPRA national mosaic can be > 500 MB. Consider filtering by region for faster processing.
+1. **ISPRA Data Download**: Manual download required (no automatic download). See "Data Download" section above for instructions.
+2. **Large File Sizes**: Full ISPRA national mosaic can be > 500 MB. Consider filtering by region (e.g., Piemonte, Lombardia) for faster processing.
+3. **Network Dependency**: Datahub.io (NUTS) may be temporarily unavailable. Local NUTS file fallback is supported via `load_nuts_boundaries(path='...')`.
 
 ## Future Improvements
 

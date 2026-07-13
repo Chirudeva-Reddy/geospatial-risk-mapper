@@ -61,30 +61,38 @@ def load_nuts_boundaries(path: str | Path | None = None) -> gpd.GeoDataFrame:
 def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
     """Load ISPRA flood hazard areas (pericolosità idraulica).
 
-    Downloads from ISPRA if not present locally.
+    Requires manual download from ISPRA (no automatic download).
     Reprojects to target CRS.
 
     Args:
-        path: Optional path to local GeoPackage or shapefile. If None, downloads.
+        path: Path to local GeoPackage or shapefile with ISPRA flood data.
+              Required — no automatic download available.
 
     Returns:
         GeoDataFrame with flood hazard areas and risk classes.
 
     Raises:
+        FileNotFoundError: If path not provided or file not found.
         ValueError: If CRS is invalid or data cannot be loaded.
     """
     if path is None:
-        # Use ISPRA WMS or download link
-        # For this implementation, we'll use a simplified approach:
-        # Create synthetic flood hazard data for testing/demo purposes
-        logger.warning(
-            "No local ISPRA flood data provided. Using synthetic data for demo."
+        raise FileNotFoundError(
+            "ISPRA flood hazard data must be manually downloaded and provided.\n"
+            "Download instructions:\n"
+            "1. Visit: http://www.pcn.minambiente.it/geoportal/\n"
+            "2. Search for 'Aree a pericolosità idraulica' (Flood Hazard Areas)\n"
+            "3. Download as GeoPackage (.gpkg) or Shapefile\n"
+            "4. Pass path to load_ispra_flood_hazard(path='path/to/file.gpkg')\n"
+            "\nAlternatively, use WMS service:\n"
+            "https://sinacloud.isprambiente.it/arcgisina/rest/services/Alluvioni/"
         )
-        gdf = _create_synthetic_flood_data()
-    else:
-        path = Path(path)
-        logger.info(f"Loading ISPRA flood hazard from {path}")
-        gdf = gpd.read_file(path)
+
+    path = Path(path)
+    if not path.exists():
+        raise FileNotFoundError(f"ISPRA flood data file not found: {path}")
+
+    logger.info(f"Loading ISPRA flood hazard from {path}")
+    gdf = gpd.read_file(path)  # type: ignore
 
     # Validate CRS
     if gdf.crs is None:
@@ -95,30 +103,6 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
         logger.info(f"Reprojecting from {gdf.crs} to {settings.target_crs}")
         gdf = gdf.to_crs(settings.target_crs)
 
-    return gdf
-
-
-def _create_synthetic_flood_data() -> gpd.GeoDataFrame:
-    """Create synthetic flood hazard data for demo/testing.
-
-    Returns:
-        GeoDataFrame with synthetic flood hazard polygons.
-    """
-    from shapely.geometry import box
-
-    # Create synthetic hazard areas (simplified for demo)
-    # In production, this would be replaced with real ISPRA data
-    data = {
-        "geometry": [
-            box(10.0, 40.0, 11.0, 41.0),  # Northern region
-            box(11.0, 40.0, 12.0, 41.0),  # Central region
-            box(12.0, 40.0, 13.0, 41.0),  # Eastern region
-        ],
-        "hazard_class": ["P2", "P3", "P1"],  # P1=low, P2=medium, P3=high
-        "area_km2": [1000.0, 800.0, 1200.0],
-    }
-    gdf = gpd.GeoDataFrame(data, crs="EPSG:4326")
-    logger.info("Created synthetic flood hazard data")
     return gdf
 
 

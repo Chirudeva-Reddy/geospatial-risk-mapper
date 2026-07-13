@@ -9,7 +9,10 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 
-from .predict import PredictionRequest, PredictionResponse, RiskPredictor
+from .predict import (
+    PredictionRequest,
+    RiskPredictor,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -53,15 +56,15 @@ async def health():
     }
 
 
-@app.post("/predict", response_model=PredictionResponse)
-async def predict(request: PredictionRequest) -> PredictionResponse:
-    """Predict flood risk for a region.
+@app.post("/predict/classification")
+async def predict_classification(request: PredictionRequest):
+    """Predict flood risk class (Low/Medium/High).
 
     Args:
         request: Features for prediction.
 
     Returns:
-        Prediction with risk class and confidence.
+        Classification prediction with risk class and confidence.
 
     Raises:
         HTTPException: If model not loaded or prediction fails.
@@ -73,7 +76,37 @@ async def predict(request: PredictionRequest) -> PredictionResponse:
         )
 
     try:
-        response = predictor.predict(request.model_dump())
+        response = predictor.predict_classification(request.model_dump())
+        return response
+    except Exception as e:
+        logger.error(f"Prediction failed: {e}")
+        raise HTTPException(
+            status_code=400,
+            detail=f"Prediction failed: {str(e)}",
+        ) from e
+
+
+@app.post("/predict/regression")
+async def predict_regression(request: PredictionRequest):
+    """Predict continuous flood risk score (0-1).
+
+    Args:
+        request: Features for prediction.
+
+    Returns:
+        Regression prediction with continuous risk score.
+
+    Raises:
+        HTTPException: If model not loaded or prediction fails.
+    """
+    if predictor is None:
+        raise HTTPException(
+            status_code=503,
+            detail="Model not loaded",
+        )
+
+    try:
+        response = predictor.predict_regression(request.model_dump())
         return response
     except Exception as e:
         logger.error(f"Prediction failed: {e}")

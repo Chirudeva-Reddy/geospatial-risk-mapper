@@ -1,13 +1,19 @@
 """Tests for prediction utilities."""
 
+
 import geopandas as gpd
 import pandas as pd
 import pytest
 from shapely.geometry import box
 
 from geo_risk.features import engineer_features
-from geo_risk.predict import PredictionRequest, PredictionResponse, RiskPredictor
-from geo_risk.train import save_model, train_model
+from geo_risk.predict import (
+    ClassificationResponse,
+    PredictionRequest,
+    RegressionResponse,
+    RiskPredictor,
+)
+from geo_risk.train import save_model, train_classifier, train_regressor
 
 
 @pytest.fixture
@@ -33,11 +39,17 @@ def flood_gdf():
 
 
 @pytest.fixture
-def trained_model(nuts_gdf, flood_gdf, tmp_path):
-    """Create and save a trained model."""
+def trained_models(nuts_gdf, flood_gdf, tmp_path):
+    """Create and save trained classifier and regressor."""
     features_df, target = engineer_features(nuts_gdf, flood_gdf)
-    result = train_model(features_df, target)
-    save_model(result, tmp_path)
+    target_continuous = features_df["flood_fraction"]
+
+    classifier_result = train_classifier(features_df, target)
+    regressor_result = train_regressor(features_df, target_continuous)
+
+    save_model(classifier_result, tmp_path, "classifier")
+    save_model(regressor_result, tmp_path, "regressor")
+
     return tmp_path
 
 
@@ -74,9 +86,9 @@ def test_prediction_request_validation():
         )
 
 
-def test_prediction_response_schema():
-    """Test that PredictionResponse has correct schema."""
-    resp = PredictionResponse(
+def test_classification_response_schema():
+    """Test that ClassificationResponse has correct schema."""
+    resp = ClassificationResponse(
         risk_class=1,
         risk_label="Medium",
         confidence=0.85,
@@ -88,17 +100,29 @@ def test_prediction_response_schema():
     assert 0 <= resp.confidence <= 1
 
 
-def test_risk_predictor_loads_model(trained_model):
-    """Test that RiskPredictor loads trained model."""
-    predictor = RiskPredictor(trained_model)
+def test_regression_response_schema():
+    """Test that RegressionResponse has correct schema."""
+    resp = RegressionResponse(
+        risk_score=0.65,
+        risk_label="Medium",
+    )
 
-    assert predictor.model is not None
+    assert 0 <= resp.risk_score <= 1
+    assert resp.risk_label == "Medium"
+
+
+def test_risk_predictor_loads_models(trained_models):
+    """Test that RiskPredictor loads both models."""
+    predictor = RiskPredictor(trained_models)
+
+    assert predictor.classifier is not None
+    assert predictor.regressor is not None
     assert len(predictor.feature_names) > 0
 
 
-def test_risk_predictor_predict(trained_model):
-    """Test that RiskPredictor can make predictions."""
-    predictor = RiskPredictor(trained_model)
+def test_risk_predictor_classification(trained_models):
+    """Test that RiskPredictor can make classification predictions."""
+    predictor = RiskPredictor(trained_models)
 
     features = {
         "flood_area_km2": 100.0,
@@ -110,32 +134,50 @@ def test_risk_predictor_predict(trained_model):
         "high_hazard_indicator": 0,
     }
 
-    response = predictor.predict(features)
+    response = predictor.predict_classification(features)
 
-    assert isinstance(response, PredictionResponse)
+    assert isinstance(response, ClassificationResponse)
     assert 0 <= response.risk_class <= 2
     assert 0 <= response.confidence <= 1
     assert sum(response.probabilities.values()) == pytest.approx(1.0)
 
 
-def test_risk_predictor_predict_batch(trained_model):
-    """Test that RiskPredictor can make batch predictions."""
-    predictor = RiskPredictor(trained_model)
+def test_risk_predictor_regression(trained_models):
+    """Test that RiskPredictor can make regression predictions."""
+    predictor = RiskPredictor(trained_models)
 
-    features_df = pd.DataFrame(
-        {
-            "flood_area_km2": [100.0, 200.0, 50.0],
-            "flood_fraction": [0.1, 0.2, 0.05],
-            "hazard_p3_fraction": [0.05, 0.1, 0.02],
-            "hazard_p2_fraction": [0.05, 0.1, 0.03],
-            "region_area_km2": [1000.0, 1000.0, 1000.0],
-            "p3_p2_ratio": [1.0, 1.0, 0.67],
-            "high_hazard_indicator": [0, 1, 0],
-        },
-        index=["IT1", "IT2", "IT3"],
-    )
+    features = {
+        "flood_area_km2": 100.0,
+        "flood_fraction": 0.1,
+        "hazard_p3_fraction": 0.05,
+        "hazard_p2_fraction": 0.05,
+        "region_area_km2": 1000.0,
+        "p3_p2_ratio": 1.0,
+        "high_hazard_indicator": 0,
+    }
 
-    results = predictor.predict_batch(features_df)
+    response = predictor.predict_regression(features)
+
+    assert isinstance(response, RegressionResponse)
+    assert 0 <= response.risk_score <= 1
+    assert response.risk_label in ["Low", "Medium", "High"]
+
+
+def test_risk_predictor_batch_classification(trained_models):
+    """Test that RiskPredictor can make batch classification predictions."""
+    predictor = RiskPredictor(trained_models)
+
+    features_df = pd.DataFrame({
+        "flood_area_km2": [100.0, 200.0, 50.0],
+        "flood_fraction": [0.1, 0.2, 0.05],
+        "hazard_p3_fraction": [0.05, 0.1, 0.02],
+        "hazard_p2_fraction": [0.05, 0.1, 0.03],
+        "region_area_km2": [1000.0, 1000.0, 1000.0],
+        "p3_p2_ratio": [1.0, 1.0, 0.67],
+        "high_hazard_indicator": [0, 1, 0],
+    }, index=["IT1", "IT2", "IT3"])
+
+    results = predictor.predict_batch_classification(features_df)
 
     assert len(results) == 3
     assert "NUTS_ID" in results.columns
@@ -143,15 +185,37 @@ def test_risk_predictor_predict_batch(trained_model):
     assert "confidence" in results.columns
 
 
-def test_risk_predictor_missing_model(tmp_path):
-    """Test that RiskPredictor raises error if model not found."""
+def test_risk_predictor_batch_regression(trained_models):
+    """Test that RiskPredictor can make batch regression predictions."""
+    predictor = RiskPredictor(trained_models)
+
+    features_df = pd.DataFrame({
+        "flood_area_km2": [100.0, 200.0, 50.0],
+        "flood_fraction": [0.1, 0.2, 0.05],
+        "hazard_p3_fraction": [0.05, 0.1, 0.02],
+        "hazard_p2_fraction": [0.05, 0.1, 0.03],
+        "region_area_km2": [1000.0, 1000.0, 1000.0],
+        "p3_p2_ratio": [1.0, 1.0, 0.67],
+        "high_hazard_indicator": [0, 1, 0],
+    }, index=["IT1", "IT2", "IT3"])
+
+    results = predictor.predict_batch_regression(features_df)
+
+    assert len(results) == 3
+    assert "NUTS_ID" in results.columns
+    assert "risk_score" in results.columns
+    assert "risk_label" in results.columns
+
+
+def test_risk_predictor_missing_models(tmp_path):
+    """Test that RiskPredictor raises error if models not found."""
     with pytest.raises(FileNotFoundError):
         RiskPredictor(tmp_path)
 
 
-def test_risk_predictor_missing_features(trained_model):
+def test_risk_predictor_missing_features(trained_models):
     """Test that predict raises error if features are missing."""
-    predictor = RiskPredictor(trained_model)
+    predictor = RiskPredictor(trained_models)
 
     features = {
         "flood_area_km2": 100.0,
@@ -159,4 +223,4 @@ def test_risk_predictor_missing_features(trained_model):
     }
 
     with pytest.raises(ValueError, match="Missing features"):
-        predictor.predict(features)
+        predictor.predict_classification(features)
