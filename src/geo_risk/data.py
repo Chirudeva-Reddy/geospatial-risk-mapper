@@ -8,6 +8,7 @@ import logging
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 
 from .config import settings
 
@@ -61,19 +62,25 @@ def load_nuts_boundaries(path: str | Path | None = None) -> gpd.GeoDataFrame:
 def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
     """Load ISPRA flood hazard areas (pericolosità idraulica).
 
+    Loads all three hazard classes (P1, P2, P3) from ISPRA shapefiles.
+    ISPRA provides separate shapefiles for each hazard class:
+    - HPH: High hazard (P3 - pericolosità elevata)
+    - MPH: Medium hazard (P2 - pericolosità media)
+    - LPH: Low hazard (P1 - pericolosità bassa)
+
     Requires manual download from ISPRA (no automatic download).
     Reprojects to target CRS.
 
     Args:
-        path: Path to local shapefile with ISPRA flood data.
-              Can be path to .shp file or directory containing shapefile.
+        path: Path to directory containing ISPRA shapefiles.
+              Must contain HPH_*.shp, MPH_*.shp, and LPH_*.shp files.
               Required — no automatic download available.
 
     Returns:
-        GeoDataFrame with flood hazard areas and risk classes.
+        GeoDataFrame with all flood hazard areas and risk classes (P1, P2, P3).
 
     Raises:
-        FileNotFoundError: If path not provided or file not found.
+        FileNotFoundError: If path not provided or required shapefiles not found.
         ValueError: If CRS is invalid or data cannot be loaded.
     """
     if path is None:
@@ -84,46 +91,71 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
             "   https://idrogeo.isprambiente.it/app/page/open-data\n"
             "2. Or use Italian Geoportal:\n"
             "   https://geodati.gov.it/ (search 'pericolosità idraulica')\n"
-            "3. Download as Shapefile (multiple files: .shp, .shx, .dbf, .prj, etc.)\n"
-            "4. Pass path to shapefile directory or .shp file:\n"
-            "   load_ispra_flood_hazard(path='path/to/shapefile.shp')\n"
-            "   or\n"
+            "3. Download the complete Shapefile package (contains 3 hazard classes)\n"
+            "4. Extract all files to a directory\n"
+            "5. Pass directory path to load_ispra_flood_hazard():\n"
             "   load_ispra_flood_hazard(path='path/to/shapefile_directory')\n"
+            "\nExpected files in directory:\n"
+            "- HPH_*.shp (High hazard - P3)\n"
+            "- MPH_*.shp (Medium hazard - P2)\n"
+            "- LPH_*.shp (Low hazard - P1)\n"
+            "Plus associated .shx, .dbf, .prj files for each.\n"
             "\nFor WMS access (advanced):\n"
             "https://www.isprambiente.gov.it/en/geospatial-data-and-maps"
         )
 
     path = Path(path)
     
-    # Handle both .shp file and directory containing shapefile
-    if path.is_dir():
-        # Find .shp file in directory
-        shp_files = list(path.glob("*.shp"))
+    if not path.is_dir():
+        raise ValueError(
+            f"Path must be a directory containing ISPRA shapefiles: {path}"
+        )
+
+    # Find shapefiles for each hazard class
+    hazard_classes = {
+        "P3": ("HPH", "High hazard (pericolosità elevata)"),
+        "P2": ("MPH", "Medium hazard (pericolosità media)"),
+        "P1": ("LPH", "Low hazard (pericolosità bassa)"),
+    }
+
+    gdfs = []
+    for hazard_class, (prefix, description) in hazard_classes.items():
+        shp_files = list(path.glob(f"{prefix}_*.shp"))
         if not shp_files:
             raise FileNotFoundError(
-                f"No shapefile (.shp) found in directory: {path}"
+                f"No shapefile found for {description} ({prefix}_*.shp) in {path}"
             )
         if len(shp_files) > 1:
             logger.warning(
-                f"Multiple shapefiles found in {path}. Using first: {shp_files[0]}"
+                f"Multiple {prefix} shapefiles found. Using: {shp_files[0]}"
             )
-        path = shp_files[0]
-    elif not path.exists():
-        raise FileNotFoundError(f"ISPRA flood data file not found: {path}")
 
-    logger.info(f"Loading ISPRA flood hazard from {path}")
-    gdf = gpd.read_file(path)  # type: ignore
+        shp_path = shp_files[0]
+        logger.info(f"Loading {description} from {shp_path}")
+        gdf = gpd.read_file(shp_path)  # type: ignore
 
-    # Validate CRS
-    if gdf.crs is None:
-        raise ValueError("Flood hazard data has no CRS defined")
+        # Validate CRS
+        if gdf.crs is None:
+            raise ValueError(f"{description} shapefile has no CRS defined")
 
-    # Reproject to target CRS
-    if gdf.crs != settings.target_crs:
-        logger.info(f"Reprojecting from {gdf.crs} to {settings.target_crs}")
-        gdf = gdf.to_crs(settings.target_crs)
+        # Add hazard class column
+        gdf["hazard_class"] = hazard_class
 
-    return gdf
+        # Reproject to target CRS
+        if gdf.crs != settings.target_crs:
+            logger.info(f"Reprojecting {description} to {settings.target_crs}")
+            gdf = gdf.to_crs(settings.target_crs)
+
+        gdfs.append(gdf)
+
+    # Combine all hazard classes
+    combined_gdf = pd.concat(gdfs, ignore_index=True)
+    logger.info(
+        f"Loaded {len(combined_gdf)} flood hazard polygons "
+        f"(P3: {len(gdfs[0])}, P2: {len(gdfs[1])}, P1: {len(gdfs[2])})"
+    )
+
+    return combined_gdf
 
 
 def load_and_validate(

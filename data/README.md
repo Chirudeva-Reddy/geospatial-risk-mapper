@@ -68,46 +68,67 @@ nuts_gdf = load_nuts_boundaries()  # Auto-downloads from datahub.io
 
 ### ISPRA Flood Data (Manual Download Required)
 
-ISPRA flood hazard data must be **manually downloaded** and provided locally as **Shapefile format**. Two options:
+ISPRA flood hazard data must be **manually downloaded** and provided locally as **Shapefile format**. The download contains **three separate shapefiles** (one for each hazard class).
+
+#### Hazard Classes in ISPRA Data
+
+ISPRA provides flood hazard data in three separate shapefiles by risk class:
+
+| Prefix | Class | Italian Name | Return Period | Description |
+|--------|-------|--------------|----------------|-------------|
+| **HPH** | **P3** | Pericolosità elevata | 20-50 years | High hazard (frequent flooding) |
+| **MPH** | **P2** | Pericolosità media | 100-200 years | Medium hazard (occasional flooding) |
+| **LPH** | **P1** | Pericolosità bassa | > 200 years | Low hazard (rare flooding) |
+
+All three must be downloaded and kept together in the same directory.
 
 #### Option 1: IdroGEO (Recommended - Official ISPRA Platform)
 1. Visit: https://idrogeo.isprambiente.it/app/page/open-data
 2. Navigate to "Flood Hazard Areas" (Aree a pericolosità idraulica)
-3. Download as **Shapefile** (will contain .shp, .shx, .dbf, .prj, etc.)
-4. Extract the downloaded ZIP file
+3. Download as **Shapefile** (will contain all 3 hazard classes)
+4. Extract the downloaded ZIP file to a directory
 5. Load into pipeline:
    ```python
    from geo_risk.data import load_and_validate
    
-   # Option A: Pass path to .shp file
-   nuts_gdf, flood_gdf = load_and_validate(
-       flood_path="path/to/ispra_flood_hazard.shp"
-   )
-   
-   # Option B: Pass path to directory containing shapefile
    nuts_gdf, flood_gdf = load_and_validate(
        flood_path="path/to/shapefile_directory"
    )
+   ```
+   The directory should contain:
+   ```
+   HPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_elevata.shp
+   HPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_elevata.shx
+   HPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_elevata.dbf
+   HPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_elevata.prj
+   MPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_media.shp
+   MPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_media.shx
+   MPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_media.dbf
+   MPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_media.prj
+   LPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_bassa.shp
+   LPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_bassa.shx
+   LPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_bassa.dbf
+   LPH_Mosaicatura_ISPRA_2020_pericolosita_idraulica_bassa.prj
    ```
 
 #### Option 2: Italian National Geoportal (Geoportale Nazionale)
 1. Visit: https://geodati.gov.it/
 2. Search for "pericolosità idraulica" or "Aree a pericolosità idraulica"
-3. Download as **Shapefile**
+3. Download as **Shapefile** (all 3 hazard classes)
 4. Extract and load as above
 
 #### Option 3: WMS Service (Advanced - Direct Access)
 - ISPRA Geospatial Data: https://www.isprambiente.gov.it/en/geospatial-data-and-maps
 - Requires manual WMS query (not automated in this pipeline)
 
-**Shapefile Format Note**: ISPRA provides data as Shapefile, which consists of multiple files:
+**Shapefile Format Note**: Each hazard class consists of multiple files:
 - `.shp` — Geometry (required)
 - `.shx` — Shape index (required)
 - `.dbf` — Attribute data (required)
 - `.prj` — Projection info (required)
 - `.cpg` — Code page (optional)
 
-Keep all files together in the same directory.
+Keep all files for all three hazard classes together in the same directory.
 
 **Why manual?** ISPRA data is large (~500 MB national mosaic) and requires proper attribution. Manual download ensures compliance with CC BY-SA 4.0 IT license.
 
