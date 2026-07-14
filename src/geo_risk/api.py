@@ -9,6 +9,7 @@ from pathlib import Path
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import RedirectResponse
 
+from .config import settings
 from .predict import (
     PredictionRequest,
     RiskPredictor,
@@ -31,7 +32,7 @@ async def startup():
     """Load trained model on startup."""
     global predictor
     try:
-        model_dir = Path("./models")
+        model_dir = Path(settings.models_dir)
         if not model_dir.exists():
             logger.error("Model directory not found")
             return
@@ -126,7 +127,10 @@ async def info():
         )
 
     return {
-        "model_type": "RandomForestClassifier",
+        "models": {
+            "classifier": "RandomForestClassifier (3-class risk)",
+            "regressor": "RandomForestRegressor (continuous risk score)",
+        },
         "n_features": len(predictor.feature_names),
         "features": predictor.feature_names,
         "risk_classes": {
