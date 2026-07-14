@@ -152,11 +152,14 @@ features_df, target = engineer_features(nuts_gdf, flood_gdf)
 
 This:
 1. Intersects flood hazard polygons with NUTS regions (`predicate="intersects"`)
-2. **Clips** each matched flood polygon to the region geometry and sums only
-   the clipped area per region (not the whole polygon — see "Known Issues"
-   below for why this matters)
-3. Computes flood exposure metrics (fraction, hazard class distribution)
-4. Creates target labels (Low/Medium/High risk) via **quantile (tertile)
+2. **Clips** each matched flood polygon to the region geometry (not the whole
+   polygon — see "Known Issues" below for why this matters)
+3. **Unions** the clipped pieces per region for the total flood area, because
+   the P1, P2, and P3 hazard mosaics can overlap and summing them would
+   double-count the same area. The per-class P3 and P2 areas are summed
+   separately (within each class the ISPRA mosaics are non-overlapping)
+4. Computes flood exposure metrics (fraction, hazard class distribution)
+5. Creates target labels (Low/Medium/High risk) via **quantile (tertile)
    binning** of `flood_fraction` — not fixed percentage cutoffs, so the
    exact class boundaries are relative to the current dataset
 
@@ -258,6 +261,12 @@ with no arguments will raise `FileNotFoundError` by design.
    overcounting — summing whole-polygon area per intersecting region would
    otherwise inflate exposure by ~10x for most regions (found and fixed
    against the real dataset; see `docs/experiment_log.md`).
+5. **Cross-class overlap double-counting**: After clipping, the separate P1,
+   P2, and P3 mosaics can still overlap each other. `engineer_features`
+   unions the clipped pieces per region for the total flood area, so
+   `flood_fraction` is not inflated by counting the same area in multiple
+   hazard classes. Per-class P3/P2 areas are summed separately for the
+   `hazard_p3_fraction` and `hazard_p2_fraction` features.
 
 ## Future Improvements
 

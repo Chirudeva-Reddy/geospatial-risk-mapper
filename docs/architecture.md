@@ -110,7 +110,7 @@ The geospatial risk mapper is a modular pipeline for flood risk prediction and v
 **Responsibility**: Extract per-region features via spatial operations
 
 **Functions**:
-- `engineer_features()`: Spatial join + clip + aggregation + target creation
+- `engineer_features()`: Spatial join + clip + union + aggregation + target creation
 - `add_spatial_features()`: Interaction features
 
 **Spatial Join Logic**:
@@ -122,7 +122,10 @@ For each NUTS region:
      hazard polygons routinely span multiple regions, so summing whole-polygon
      area (instead of clipping first) overcounts exposure by ~10x for most
      regions (found and fixed against the real dataset)
-  3. Sum the *clipped* area by hazard class (P1, P2, P3), via equal-area projection
+  3. Union the clipped pieces per region for the *total* flood area, because
+     the P1/P2/P3 mosaics can overlap and summing them would double-count
+     the same area; the per-class P3 and P2 areas are summed separately
+     (within each class the ISPRA mosaics are non-overlapping)
   4. Compute fraction of region covered
   5. Assign risk label via quantile (tertile) binning of flood_fraction — not
      fixed percentage cutoffs, since those produced a severely imbalanced
@@ -130,7 +133,7 @@ For each NUTS region:
 ```
 
 **Features Produced**:
-- `flood_area_km2`: Clipped hazard area actually within the region
+- `flood_area_km2`: Clipped hazard area actually within the region (unioned across P1/P2/P3 to avoid double-counting overlaps)
 - `flood_fraction`: Fraction of region covered
 - `hazard_p3_fraction`: High-risk fraction
 - `hazard_p2_fraction`: Medium-risk fraction
@@ -194,8 +197,9 @@ you want them.
 - `save_map()`: Export to HTML
 
 **Features**:
-- Choropleth coloring (Green/Orange/Red for Low/Medium/High)
-- Popups with region info (NUTS_ID, risk class)
+- Classification map: step color scale (Green/Orange/Red for Low/Medium/High)
+- Regression map: continuous green-to-red gradient for 0-1 risk scores
+- Popups with region info (NUTS_ID, risk class / score)
 - Layer control for toggling views
 - Centered on data bounds
 
@@ -215,7 +219,9 @@ you want them.
 
 **Validation**:
 - Pydantic enforces feature ranges (e.g., 0 ≤ flood_fraction ≤ 1)
-- Raises `ValueError` if features missing
+- `RiskPredictor` accepts the five base input fields and auto-computes the
+  derived `p3_p2_ratio` and `high_hazard_indicator` if they are missing
+- Raises `ValueError` if required base or derived features are missing
 
 ### 7. User Interfaces
 
@@ -292,7 +298,8 @@ where the same shapefiles used for training live.
 
 2. Engineer Features (features.py::engineer_features)
    ├─ Spatial join (NUTS ∩ Hazard, predicate="intersects")
-   ├─ Clip each matched polygon to its region, sum clipped area (not whole-polygon area)
+   ├─ Clip each matched polygon to its region
+   ├─ Union the clipped pieces per region for total flood area (avoids double-counting overlapping P1/P2/P3 mosaics)
    ├─ Aggregate per region (groupby, vectorized)
    └─ Create target labels (tertile binning of flood_fraction)
 
@@ -391,4 +398,4 @@ make run-api      # FastAPI on localhost:8000
 ---
 
 **Last Updated**: 2026-07-14
-**Architecture Version**: 1.1 (classifier/regressor split, data caching, spatial-join area fix)
+**Architecture Version**: 1.2 (classifier/regressor split, data caching, spatial-join clip + union, continuous regression map)

@@ -3,7 +3,7 @@
 ## Model Details
 
 **Model Name**: Geospatial Flood Risk Classifier & Regressor
-**Version**: 1.1
+**Version**: 1.2
 **Date**: 2026-07-14
 **Type**: Two separate models trained on the same features:
   - RandomForestClassifier (3-class risk)
@@ -38,7 +38,7 @@ feature set below, differing only in target and split strategy.
 - `random_state`: 42
 
 **Input Features** (7, identical for both models):
-1. `flood_area_km2`: Flood hazard area actually within the region (km²) — clipped, not whole-polygon
+1. `flood_area_km2`: Flood hazard area actually within the region (km²) — clipped and then unioned across P1/P2/P3 to avoid double-counting overlapping hazard classes
 2. `flood_fraction`: Fraction of region covered by flood hazard (0-1)
 3. `hazard_p3_fraction`: Fraction covered by high-risk (P3) hazard (0-1)
 4. `hazard_p2_fraction`: Fraction covered by medium-risk (P2) hazard (0-1)
@@ -75,6 +75,10 @@ construction, since the target is assigned via tertile binning of
   hazard polygons often span multiple regions; summing whole-polygon area
   instead of the clipped intersection overcounted exposure by ~10x for most
   regions in testing
+- Union the clipped pieces per region for the total flood area, because the
+  P1, P2, and P3 mosaics can overlap; summing the clipped areas of all three
+  classes would double-count the same area. The per-class P3 and P2 areas are
+  summed separately (within each class the ISPRA mosaics are non-overlapping)
 - Area computed via equal-area projection (EPSG:3035), since neither NUTS nor
   ISPRA provide a usable pre-computed area attribute
 - Feature aggregation per region (vectorized groupby)
@@ -89,16 +93,16 @@ illustrative placeholders.
 
 | Metric | Value |
 |--------|-------|
-| **Accuracy** | 1.00 |
-| **F1 (weighted)** | 1.00 |
-| **F1 (macro)** | 1.00 |
+| **Accuracy** | 0.80 |
+| **F1 (weighted)** | 0.80 |
+| **F1 (macro)** | 0.78 |
 
 **⚠️ This is target leakage, not genuine predictive skill.** `flood_risk_class`
 is derived directly from `flood_fraction` (via tertile binning — see
 "Target" above), and `flood_fraction` is also supplied to the model as an
 input feature. The classifier only has to learn the tertile boundaries of a
 feature it's directly given, on a 21-sample dataset with a ~4-5-sample test
-split — perfect accuracy here demonstrates the pipeline works end-to-end, not
+split — 80% accuracy here demonstrates the pipeline works end-to-end, not
 that flood risk is genuinely predictable from these features. A meaningful
 classifier evaluation would need to either drop `flood_fraction` as an input
 feature (predicting risk from the *other* features only) or evaluate on
@@ -108,12 +112,12 @@ held-out regions never used to derive the target thresholds.
 
 | Metric | Value |
 |--------|-------|
-| **MAE** | 0.038 |
-| **RMSE** | 0.046 |
-| **R²** | 0.836 |
+| **MAE** | 0.021 |
+| **RMSE** | 0.025 |
+| **R²** | 0.847 |
 
 The regressor predicts `flood_fraction` directly and doesn't have the same
-leakage issue as the classifier, but R²=0.84 on a 4-5 sample test set from
+leakage issue as the classifier, but R²=0.85 on a 4-5 sample test set from
 21 total regions should be read as "the pipeline works," not as a robust
 generalization estimate — see "Small Dataset" limitation below.
 
@@ -121,16 +125,16 @@ generalization estimate — see "Small Dataset" limitation below.
 
 | Feature | Importance |
 |---------|-----------|
-| `flood_fraction` | 0.277 |
-| `hazard_p2_fraction` | 0.228 |
-| `hazard_p3_fraction` | 0.212 |
-| `high_hazard_indicator` | 0.116 |
-| `flood_area_km2` | 0.116 |
-| `region_area_km2` | 0.026 |
-| `p3_p2_ratio` | 0.025 |
+| `flood_fraction` | 0.268 |
+| `hazard_p3_fraction` | 0.221 |
+| `hazard_p2_fraction` | 0.189 |
+| `flood_area_km2` | 0.133 |
+| `high_hazard_indicator` | 0.111 |
+| `p3_p2_ratio` | 0.049 |
+| `region_area_km2` | 0.029 |
 
-**Key Insight**: `flood_fraction`, `hazard_p2_fraction`, and
-`hazard_p3_fraction` dominate (combined ~72% of importance) — unsurprising
+**Key Insight**: `flood_fraction`, `hazard_p3_fraction`, and
+`hazard_p2_fraction` dominate (combined ~68% of importance) — unsurprising
 given `flood_fraction` is also what the target is derived from (see target
 leakage caveat above). `region_area_km2` and `p3_p2_ratio` contribute least.
 

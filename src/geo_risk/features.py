@@ -24,7 +24,8 @@ def engineer_features(
     """Engineer features from spatial join of NUTS and flood hazard data.
 
     Computes per-region features:
-    - flood_area_km2: Total flood hazard area in region
+    - flood_area_km2: Total flood hazard area in region (union of clipped
+      P1/P2/P3 polygons, so overlapping hazard classes are not double-counted)
     - flood_fraction: Fraction of region covered by flood hazard
     - hazard_p3_fraction: Fraction covered by high-risk (P3) hazard
     - hazard_p2_fraction: Fraction covered by medium-risk (P2) hazard
@@ -171,13 +172,17 @@ def engineer_features(
 
 
 def add_spatial_features(features_df: pd.DataFrame) -> pd.DataFrame:
-    """Add additional spatial features (optional).
+    """Add derived interaction features from the base hazard fractions.
+
+    Computes:
+    - p3_p2_ratio: hazard_p3_fraction / (hazard_p2_fraction + 1e-6)
+    - high_hazard_indicator: 1 if hazard_p3_fraction > 0.05 else 0
 
     Args:
         features_df: DataFrame with base features.
 
     Returns:
-        DataFrame with additional engineered features.
+        DataFrame with the additional engineered columns above.
     """
     df = features_df.copy()
 

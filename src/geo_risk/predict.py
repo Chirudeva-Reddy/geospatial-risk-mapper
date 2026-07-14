@@ -19,7 +19,12 @@ RISK_LABELS = {0: "Low", 1: "Medium", 2: "High"}
 
 
 class PredictionRequest(BaseModel):
-    """Request schema for flood risk prediction."""
+    """Request schema for flood risk prediction.
+
+    Only the five base input fields are required. The derived interaction
+    features `p3_p2_ratio` and `high_hazard_indicator` are computed
+    automatically inside `RiskPredictor` from the P3/P2 fractions.
+    """
 
     flood_area_km2: float = Field(..., ge=0, description="Flood hazard area in km²")
     flood_fraction: float = Field(
@@ -98,6 +103,11 @@ class RiskPredictor:
     ) -> ClassificationResponse:
         """Predict flood risk class (Low/Medium/High).
 
+        Accepts either the full feature set or the five base input fields
+        (`flood_area_km2`, `flood_fraction`, `hazard_p3_fraction`,
+        `hazard_p2_fraction`, `region_area_km2`). Missing derived features
+        (`p3_p2_ratio`, `high_hazard_indicator`) are computed automatically.
+
         Args:
             features: Dictionary or Series with feature values.
 
@@ -147,6 +157,11 @@ class RiskPredictor:
 
     def predict_regression(self, features: dict | pd.Series) -> RegressionResponse:
         """Predict continuous flood risk score (0-1).
+
+        Accepts either the full feature set or the five base input fields
+        (`flood_area_km2`, `flood_fraction`, `hazard_p3_fraction`,
+        `hazard_p2_fraction`, `region_area_km2`). Missing derived features
+        (`p3_p2_ratio`, `high_hazard_indicator`) are computed automatically.
 
         Args:
             features: Dictionary or Series with feature values.

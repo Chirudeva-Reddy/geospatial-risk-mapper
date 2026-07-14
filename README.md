@@ -13,12 +13,12 @@
 
 This project predicts **flood risk** across Italian administrative regions (NUTS 2) using:
 
-1. **Geospatial processing**: Load NUTS boundaries + ISPRA flood hazard data, handle CRS reprojection, perform spatial joins with polygon clipping for accurate area
+1. **Geospatial processing**: Load NUTS boundaries + ISPRA flood hazard data, handle CRS reprojection, perform spatial joins with polygon clipping and union for accurate area
 2. **Feature engineering**: Extract per-region flood exposure metrics (area, fraction, hazard class distribution)
 3. **Predictive models**: RandomForest classifier (3-class risk) **and** RandomForest regressor (continuous risk score), trained on identical engineered features
 4. **Interactive UI**: Streamlit app with a model selector (classifier vs. regressor), folium choropleth maps, layer toggle (predicted vs. actual), and feature explorer
 
-**Key insight**: Demonstrates correct CRS handling and spatial-join area correctness — an earlier version summed whole flood-polygon area per intersecting region, overcounting exposure by ~10x for most regions; fixed by clipping to the region geometry (see `docs/experiment_log.md`). Also demonstrates honest evaluation: the classifier's 100% test accuracy is flagged as target leakage, not genuine predictive skill (see "Evaluation" below).
+**Key insight**: Demonstrates correct CRS handling and spatial-join area correctness — an earlier version summed whole flood-polygon area per intersecting region, overcounting exposure by ~10x for most regions; fixed by clipping to the region geometry and then unioning the clipped pieces so overlapping P1/P2/P3 polygons are not double-counted (see `docs/experiment_log.md`). Also demonstrates honest evaluation: the classifier's ~80% test accuracy is flagged as target leakage, not genuine predictive skill (see "Evaluation" below).
 
 ## Quick Start
 
@@ -37,7 +37,7 @@ make check        # ruff lint, pyright typecheck, pytest
 #    - Contains 3 shapefiles: HPH_*.shp, MPH_*.shp, LPH_*.shp
 
 # 4. Train models (generates artifacts in models/)
-make train        # Trains both classifier and regressor
+make train FLOOD_PATH=data/ispra_shapefiles/  # Trains both classifier and regressor
 
 # 5. Launch Streamlit UI
 make run-app      # http://localhost:8501
@@ -69,7 +69,7 @@ src/geo_risk/
 ├── app.py             # Streamlit UI (primary)
 └── api.py             # FastAPI /predict endpoint (optional)
 
-tests/                # 46 pytest tests (data, features, train, predict, mapping, smoke)
+tests/                # 48 pytest tests (data, features, train, predict, mapping, smoke)
 models/               # Trained model artifacts (gitignored): classifier.joblib, regressor.joblib, metrics, feature importances
 data/                 # ISPRA shapefiles (manual download, gitignored) + processed/ cache (gitignored)
 ```
@@ -100,13 +100,18 @@ data/                 # ISPRA shapefiles (manual download, gitignored) + process
 - **Regressor**: Continuous risk score (0-1, predicts `flood_fraction` directly), via `train_regressor()`
 
 **Features** (engineered from spatial joins, identical for both models):
-- `flood_area_km2`: Flood hazard area actually within the region (clipped to region geometry, not whole-polygon area)
+- `flood_area_km2`: Flood hazard area actually within the region (clipped to region geometry, then unioned across P1/P2/P3 to avoid double-counting overlaps)
 - `flood_fraction`: Fraction of region covered by flood hazard
 - `hazard_p3_fraction`: Fraction covered by high-risk (P3) hazard
 - `hazard_p2_fraction`: Fraction covered by medium-risk (P2) hazard
 - `region_area_km2`: Total region area (equal-area projection)
 - `p3_p2_ratio`: Interaction feature (high/medium hazard ratio)
 - `high_hazard_indicator`: Binary flag (P3 presence)
+
+These last two interaction features are derived by `add_spatial_features()`
+from `hazard_p3_fraction` and `hazard_p2_fraction`; callers of the API only
+need to supply the five base fields above, and the Streamlit UI uses the
+engineered feature set internally.
 
 **Classifier target**: Risk class (0=low, 1=medium, 2=high) via **quantile
 (tertile) binning** of `flood_fraction` — not fixed percentage thresholds.
@@ -129,17 +134,21 @@ for the regressor.
 ## Evaluation
 
 ### Metrics (Test Set, real ISPRA data — 21 regions, 85,460 hazard polygons)
-- **Classifier accuracy**: 1.00 (see caveat below — this is target leakage, not genuine skill)
-- **Classifier F1 (weighted/macro)**: 1.00
-- **Regressor MAE**: 0.038 / **RMSE**: 0.046 / **R²**: 0.836
+- **Classifier accuracy**: 0.80 (see caveat below — this is target leakage, not genuine skill)
+- **Classifier F1 (weighted)**: 0.80 / **F1 (macro)**: 0.78
+- **Regressor MAE**: 0.021 / **RMSE**: 0.025 / **R²**: 0.847
 
 ### Interpretation
 1. **Target leakage in the classifier**: `flood_risk_class` is derived from
    `flood_fraction` via tertile binning, and `flood_fraction` is also fed to
    the model as a feature — the classifier only has to learn the tertile
-   cutoffs of a value it's directly given. Perfect accuracy here demonstrates
-   the pipeline works end-to-end, not that flood risk is genuinely
-   predictable from these features.
+   cutoffs of a value it's directly given. The 80% test accuracy is still
+   inflated by this leakage, but the small (4-5 sample) test set and the
+   overlap between the `flood_fraction` and `hazard_p3/p2_fraction` features
+   make perfect separation impossible, so it should not be read as a robust
+   generalization estimate. The score demonstrates the pipeline works
+   end-to-end, not that flood risk is genuinely predictable from these
+   features.
 2. **Tiny dataset**: 21 NUTS 2 regions means a ~4-5 sample test set; no
    metric here is a robust generalization estimate.
 3. **Spatial autocorrelation**: Adjacent regions are not independent; random
@@ -159,12 +168,18 @@ make run-app
 **Features**:
 - **Model selector**: Switch between Classification (3-class) and Regression (continuous score)
 - **Predicted Risk Map**: Interactive folium choropleth with popups
+  - Classification map uses a Low/Medium/High step color scale (green/orange/red)
+  - Regression map uses a continuous green-to-red gradient (0 = low, 1 = high)
 - **Actual vs. Predicted**: Layer toggle to compare true vs. predicted risk
 - **Feature Explorer**: Visualize feature distributions, top features by importance
 
 The app loads the saved model artifacts and runs inference on the same
 ISPRA + NUTS feature snapshot used for training, so the "predicted" values
-are the model's output on the current local data.
+are the model's output on the current local data. The **Classification Score**
+shown in the Feature Explorer is the in-sample accuracy (predictions vs.
+tertile target) on the whole dataset; the **Regression Score** is `1 - MAE`
+against the actual `flood_fraction` on the whole dataset. These are not the
+test-set metrics reported in `models/*_metrics.json`.
 
 ### FastAPI
 
@@ -177,6 +192,12 @@ make run-api
 - `POST /predict/classification` — 3-class risk prediction
 - `POST /predict/regression` — Continuous risk score prediction
 - `GET /info` — Metadata for both models + feature list
+
+**Input fields**: `flood_area_km2`, `flood_fraction`, `hazard_p3_fraction`,
+`hazard_p2_fraction`, and `region_area_km2`. The derived features
+`p3_p2_ratio` and `high_hazard_indicator` are computed automatically from the
+hazard fractions, so the request body only needs the five base fields shown
+below.
 
 **Example**:
 ```bash
@@ -211,7 +232,7 @@ uv run pytest -v
 uv run pytest --cov=src --cov-report=term-missing
 ```
 
-**Test Coverage** (50%, 46 tests):
+**Test Coverage** (50%, 48 tests):
 - Data loading, CRS validation, geometry validity, real ISPRA schema regression tests, caching behavior
 - Spatial joins, feature engineering correctness
 - Model training, prediction, batch inference
@@ -223,10 +244,11 @@ uv run pytest --cov=src --cov-report=term-missing
 ### Target Leakage (Classifier)
 **Critical**: The classifier's target (`flood_risk_class`) is derived from
 `flood_fraction` via tertile binning, and `flood_fraction` is also supplied
-to the classifier as an input feature. This means the reported 100% test
-accuracy demonstrates the pipeline runs correctly end-to-end, **not** that
-flood risk is genuinely predictable from these features. See
-`docs/model_card.md` for what a non-leaky evaluation would require.
+to the classifier as an input feature. This means the reported ~80% test
+accuracy is inflated by target leakage and should be read as "the pipeline
+runs correctly end-to-end," **not** that flood risk is genuinely predictable
+from these features. See `docs/model_card.md` for what a non-leaky evaluation
+would require.
 
 ### Spatial Autocorrelation
 **Critical**: Flood risk is spatially autocorrelated — adjacent regions are not independent. Random train-test splits leak spatial information, inflating apparent performance. **Proper evaluation requires spatial cross-validation** (e.g., leave-one-region-out or spatial k-fold).
@@ -278,7 +300,7 @@ flood risk is genuinely predictable from these features. See
         ┌──────────────────────────────┐
         │  Features (features.py)      │
         │  (spatial join + polygon     │
-        │   clip + engineering)        │
+        │   clip + union + engineering)│
         └──────────────────────────────┘
                        │
                        ▼
@@ -301,7 +323,7 @@ make check
 
 - **Ruff lint**: E/F/I/N/UP/B/SIM/C4 rules
 - **Pyright typecheck**: Standard mode, pandas/geopandas stubs relaxed
-- **Pytest**: 46 tests, ~50% coverage
+- **Pytest**: 48 tests, ~50% coverage
 
 ## Documentation
 
