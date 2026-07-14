@@ -30,9 +30,13 @@ st.title("🌍 Geospatial Flood Risk Mapper")
 st.markdown(
     """
     Interactive map of predicted flood risk across Italian regions (NUTS 2).
-    
+
     **Data:** ISPRA flood hazard areas + NUTS administrative boundaries  
     **Models:** RandomForest classifier (3-class) & regressor (continuous score)
+
+    **Predictions are made on the current local ISPRA + NUTS snapshot**
+    (the same data the models were trained on). The app loads the saved
+    artifacts and runs inference on the feature snapshot.
     """
 )
 
@@ -136,7 +140,7 @@ if map_type == "Predicted Risk":
         )
 
     m = create_risk_choropleth(nuts_gdf, predictions_series, title=f"Predicted {model_label} Risk")
-    st_folium(m, width=1200, height=600)
+    st_folium(m, height=600, use_container_width=True, returned_objects=[])
 
 elif map_type == "Actual vs Predicted":
     st.header("Actual vs Predicted Flood Risk")
@@ -155,7 +159,7 @@ elif map_type == "Actual vs Predicted":
         target_series = features_df["flood_fraction"]
 
     m = create_comparison_map(nuts_gdf, target_series, predictions_series)
-    st_folium(m, width=1200, height=600)
+    st_folium(m, height=600, use_container_width=True, returned_objects=[])
 
 else:  # Feature Explorer
     st.header("Feature Explorer")

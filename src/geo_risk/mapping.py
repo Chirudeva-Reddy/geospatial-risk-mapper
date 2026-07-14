@@ -1,17 +1,173 @@
 """Interactive map generation using folium for flood risk visualization."""
 
-import json
 import logging
 from pathlib import Path
 
+import branca.colormap
 import folium
 import geopandas as gpd
 import pandas as pd
+from jinja2 import Template
 
 logger = logging.getLogger(__name__)
 
 RISK_LABELS = {0: "Low", 1: "Medium", 2: "High"}
 RISK_COLORS = {0: "#2ecc71", 1: "#f39c12", 2: "#e74c3c"}  # Green, Orange, Red
+
+# Match the same boundaries used in predict.py.
+RISK_THRESHOLDS = [0.0, 0.33, 0.67, 1.0]
+
+# Color scale template with a configurable position so the legend can be kept
+# away from the layer control (top-right) on the comparison map.
+_COLOR_SCALE_TEMPLATE = """
+{% macro script(this, kwargs) %}
+    var {{this.get_name()}} = {};
+
+    {%if this.color_range %}
+    {{this.get_name()}}.color = d3.scale.threshold()
+              .domain({{this.color_domain}})
+              .range({{this.color_range}});
+    {%else%}
+    {{this.get_name()}}.color = d3.scale.threshold()
+              .domain([{{ this.color_domain[0] }}, {{ this.color_domain[-1] }}])
+              .range(['{{ this.fill_color }}', '{{ this.fill_color }}']);
+    {%endif%}
+
+    {{this.get_name()}}.x = d3.scale.linear()
+              .domain([{{ this.color_domain[0] }}, {{ this.color_domain[-1] }}])
+              .range([0, {{ this.width }} - 50]);
+
+    {{this.get_name()}}.legend = L.control({position: {{ this.position | tojson }} });
+    {{this.get_name()}}.legend.onAdd = function (map) {var div = L.DomUtil.create('div', 'legend'); return div};
+    {{this.get_name()}}.legend.addTo({{this._parent.get_name()}});
+
+    {{this.get_name()}}.xAxis = d3.svg.axis()
+        .scale({{this.get_name()}}.x)
+        .orient("top")
+        .tickSize(1)
+        .tickValues({{ this.tick_labels }});
+
+    {{this.get_name()}}.svg = d3.select(".legend.leaflet-control").append("svg")
+        .attr("id", 'legend')
+        .attr("width", {{ this.width }})
+        .attr("height", {{ this.height }});
+
+    {{this.get_name()}}.g = {{this.get_name()}}.svg.append("g")
+        .attr("class", "key")
+        .attr("fill", {{ this.text_color | tojson }})
+        .attr("transform", "translate(25,16)");
+
+    {{this.get_name()}}.g.selectAll("rect")
+        .data({{this.get_name()}}.color.range().map(function(d, i) {
+          return {
+            x0: i ? {{this.get_name()}}.x({{this.get_name()}}.color.domain()[i - 1]) : {{this.get_name()}}.x.range()[0],
+            x1: i < {{this.get_name()}}.color.domain().length ? {{this.get_name()}}.x({{this.get_name()}}.color.domain()[i]) : {{this.get_name()}}.x.range()[1],
+            z: d
+          };
+        }))
+      .enter().append("rect")
+        .attr("height", {{ this.height }} - 30)
+        .attr("x", function(d) { return d.x0; })
+        .attr("width", function(d) { return d.x1 - d.x0; })
+        .style("fill", function(d) { return d.z; });
+
+    {{this.get_name()}}.g.call({{this.get_name()}}.xAxis).append("text")
+        .attr("class", "caption")
+        .attr("y", 21)
+        .attr("fill", {{ this.text_color | tojson }})
+        .text({{ this.caption|tojson }});
+{% endmacro %}
+"""
+
+
+def _score_to_class(score: float) -> int:
+    """Map a continuous risk score to a low/medium/high class."""
+    if score < 0.33:
+        return 0
+    if score < 0.67:
+        return 1
+    return 2
+
+
+def _is_classification(values: pd.Series) -> bool:
+    """Return True if values are integer risk classes in {0, 1, 2}."""
+    return bool(
+        pd.api.types.is_integer_dtype(values)
+        and values.dropna().isin([0, 1, 2]).all()
+    )
+
+
+def _create_colormap(
+    is_continuous: bool,
+    position: str = "topright",
+    caption: str = "Risk",
+) -> branca.colormap.StepColormap:
+    """Build a small, custom-positioned color scale for the map legend.
+
+    Classification data uses an index of [0, 1, 2, 3] so the 0/1/2 classes
+    map to the green/orange/red colors. Continuous data uses the same
+    0.33/0.67 thresholds used by the regressor/score binning.
+    """
+    colors = list(RISK_COLORS.values())
+    index = [0.0, 0.33, 0.67, 1.0] if is_continuous else [0, 1, 2, 3]
+
+    colormap = branca.colormap.StepColormap(
+        colors,
+        index=index,
+        vmin=index[0],
+        vmax=index[-1],
+        caption=caption,
+        max_labels=4,
+    )
+    # Keep the legend compact so it does not overflow the map corners.
+    colormap.width = 250
+    colormap.height = 40
+    colormap.position = position
+    colormap._template = Template(_COLOR_SCALE_TEMPLATE)
+    return colormap
+
+
+def _add_risk_geojson(
+    m: folium.Map,
+    gdf: gpd.GeoDataFrame,
+    colormap: branca.colormap.StepColormap,
+    name: str,
+    show: bool = True,
+) -> None:
+    """Add a GeoJSON layer with risk styling, tooltips, and popups."""
+
+    def style_function(feature: dict) -> dict:
+        return {
+            "fillColor": colormap.rgb_hex_str(feature["properties"]["risk_score"]),
+            "color": "black",
+            "weight": 1,
+            "fillOpacity": 0.7,
+            "opacity": 0.5,
+        }
+
+    def highlight_function(feature: dict) -> dict:  # noqa: ARG001
+        return {"weight": 2, "fillOpacity": 0.9}
+
+    tooltip = folium.GeoJsonTooltip(
+        fields=["NUTS_ID", "risk_label", "risk_score"],
+        aliases=["Region", "Risk", "Score"],
+        localize=True,
+    )
+    popup = folium.GeoJsonPopup(
+        fields=["NUTS_ID", "risk_label", "risk_score"],
+        aliases=["Region", "Risk", "Score"],
+        localize=True,
+    )
+
+    folium.GeoJson(
+        gdf,
+        name=name,
+        style_function=style_function,
+        highlight_function=highlight_function,
+        tooltip=tooltip,
+        popup=popup,
+        show=show,
+    ).add_to(m)
 
 
 def create_risk_choropleth(
@@ -23,68 +179,38 @@ def create_risk_choropleth(
 
     Args:
         nuts_gdf: GeoDataFrame with NUTS regions and geometries.
-        predictions: Series with predicted risk classes (index=NUTS_ID).
+        predictions: Series with predicted risk classes or scores (index=NUTS_ID).
         title: Map title.
 
     Returns:
         folium.Map object.
     """
-    # Prepare data
     map_data = nuts_gdf[["NUTS_ID", "geometry"]].copy()
-    map_data["risk_class"] = map_data["NUTS_ID"].map(predictions)  # type: ignore
-    map_data["risk_label"] = map_data["risk_class"].map(RISK_LABELS)  # type: ignore
+    map_data["risk_score"] = map_data["NUTS_ID"].map(predictions)
+    is_continuous = not _is_classification(map_data["risk_score"])
 
-    # Convert to GeoJSON
-    geojson_data = json.loads(map_data.to_json())  # type: ignore
+    if is_continuous:
+        map_data["risk_class"] = map_data["risk_score"].apply(_score_to_class)
+    else:
+        map_data["risk_class"] = map_data["risk_score"].astype(int)
 
-    # Calculate center
+    map_data["risk_label"] = map_data["risk_class"].map(RISK_LABELS)
+
     bounds = map_data.total_bounds
     center_lat = (bounds[1] + bounds[3]) / 2
     center_lon = (bounds[0] + bounds[2]) / 2
 
-    # Create map
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=6,
         tiles="OpenStreetMap",
     )
 
-    # Add choropleth layer
-    folium.Choropleth(
-        geo_data=geojson_data,
-        name=title,
-        data=map_data,
-        columns=["NUTS_ID", "risk_class"],
-        key_on="feature.properties.NUTS_ID",
-        fill_color="YlOrRd",
-        fill_opacity=0.7,
-        line_opacity=0.5,
-        legend_name="Risk Class",
-    ).add_to(m)
+    caption = "Risk Score" if is_continuous else "Risk Class"
+    colormap = _create_colormap(is_continuous, position="topright", caption=caption)
+    _add_risk_geojson(m, map_data, colormap, title)
+    colormap.add_to(m)
 
-    # Add popups with region info
-    for _, row in map_data.iterrows():
-        folium.Popup(
-            f"<b>{row['NUTS_ID']}</b><br>"
-            f"Risk: {row['risk_label']}<br>"
-            f"Class: {row['risk_class']}",
-            max_width=200,
-        ).add_to(
-            folium.CircleMarker(
-                location=[
-                    row.geometry.centroid.y,
-                    row.geometry.centroid.x,
-                ],
-                radius=5,
-                color=RISK_COLORS[row["risk_class"]],
-                fill=True,
-                fillColor=RISK_COLORS[row["risk_class"]],
-                fillOpacity=0.7,
-                weight=2,
-            )
-        )
-
-    m.add_child(folium.LayerControl())
     logger.info("Created interactive risk choropleth map")
     return m
 
@@ -98,61 +224,53 @@ def create_comparison_map(
 
     Args:
         nuts_gdf: GeoDataFrame with NUTS regions.
-        actual: Series with actual risk classes.
-        predicted: Series with predicted risk classes.
+        actual: Series with actual risk classes or scores.
+        predicted: Series with predicted risk classes or scores.
 
     Returns:
         folium.Map with layer control.
     """
-    # Prepare data
     map_data = nuts_gdf[["NUTS_ID", "geometry"]].copy()
-    map_data["actual_risk"] = map_data["NUTS_ID"].map(actual)  # type: ignore
-    map_data["predicted_risk"] = map_data["NUTS_ID"].map(predicted)  # type: ignore
+    map_data["actual_risk"] = map_data["NUTS_ID"].map(actual)
+    map_data["predicted_risk"] = map_data["NUTS_ID"].map(predicted)
 
-    # Convert to GeoJSON
-    geojson_data = json.loads(map_data.to_json())  # type: ignore
+    actual_is_class = _is_classification(map_data["actual_risk"])
+    predicted_is_class = _is_classification(map_data["predicted_risk"])
+    is_continuous = not (actual_is_class and predicted_is_class)
 
-    # Calculate center
+    if is_continuous:
+        map_data["actual_label"] = map_data["actual_risk"].apply(_score_to_class).map(RISK_LABELS)
+        map_data["predicted_label"] = (
+            map_data["predicted_risk"].apply(_score_to_class).map(RISK_LABELS)
+        )
+    else:
+        map_data["actual_label"] = map_data["actual_risk"].astype(int).map(RISK_LABELS)
+        map_data["predicted_label"] = map_data["predicted_risk"].astype(int).map(RISK_LABELS)
+
+    actual_gdf = map_data[["NUTS_ID", "geometry", "actual_risk", "actual_label"]].rename(
+        columns={"actual_risk": "risk_score", "actual_label": "risk_label"}
+    )
+    predicted_gdf = map_data[["NUTS_ID", "geometry", "predicted_risk", "predicted_label"]].rename(
+        columns={"predicted_risk": "risk_score", "predicted_label": "risk_label"}
+    )
+
     bounds = map_data.total_bounds
     center_lat = (bounds[1] + bounds[3]) / 2
     center_lon = (bounds[0] + bounds[2]) / 2
 
-    # Create base map
     m = folium.Map(
         location=[center_lat, center_lon],
         zoom_start=6,
         tiles="OpenStreetMap",
     )
 
-    # Actual risk layer
-    folium.Choropleth(
-        geo_data=geojson_data,
-        name="Actual Risk",
-        data=map_data,
-        columns=["NUTS_ID", "actual_risk"],
-        key_on="feature.properties.NUTS_ID",
-        fill_color="RdYlGn_r",
-        fill_opacity=0.7,
-        line_opacity=0.5,
-        legend_name="Actual Risk Class",
-        show=True,
-    ).add_to(m)
+    # Place the legend on the left so the layer control (top-right) is fully visible.
+    colormap = _create_colormap(is_continuous, position="topleft", caption="Risk")
+    _add_risk_geojson(m, actual_gdf, colormap, "Actual Risk", show=True)
+    _add_risk_geojson(m, predicted_gdf, colormap, "Predicted Risk", show=False)
+    colormap.add_to(m)
+    folium.LayerControl().add_to(m)
 
-    # Predicted risk layer
-    folium.Choropleth(
-        geo_data=geojson_data,
-        name="Predicted Risk",
-        data=map_data,
-        columns=["NUTS_ID", "predicted_risk"],
-        key_on="feature.properties.NUTS_ID",
-        fill_color="YlOrRd",
-        fill_opacity=0.7,
-        line_opacity=0.5,
-        legend_name="Predicted Risk Class",
-        show=False,
-    ).add_to(m)
-
-    m.add_child(folium.LayerControl())
     logger.info("Created comparison map with layer toggle")
     return m
 

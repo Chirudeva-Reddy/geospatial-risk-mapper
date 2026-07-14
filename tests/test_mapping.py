@@ -47,6 +47,26 @@ def actual(nuts_gdf):
     )
 
 
+@pytest.fixture
+def predictions_continuous(nuts_gdf):
+    """Create synthetic continuous risk scores."""
+    return pd.Series(
+        [0.1, 0.5, 0.9],
+        index=nuts_gdf["NUTS_ID"],
+        name="risk_score",
+    )
+
+
+@pytest.fixture
+def actual_continuous(nuts_gdf):
+    """Create synthetic continuous actual risk scores."""
+    return pd.Series(
+        [0.2, 0.4, 0.8],
+        index=nuts_gdf["NUTS_ID"],
+        name="risk_score",
+    )
+
+
 def test_create_risk_choropleth_returns_map(nuts_gdf, predictions):
     """Test that create_risk_choropleth returns a folium Map."""
     m = create_risk_choropleth(nuts_gdf, predictions)
@@ -97,6 +117,20 @@ def test_save_map_creates_parent_dirs(nuts_gdf, predictions, tmp_path):
 
     assert saved_path.exists()
     assert saved_path.parent.exists()
+
+
+def test_create_risk_choropleth_continuous(nuts_gdf, predictions_continuous):
+    """Test that create_risk_choropleth handles continuous scores."""
+    m = create_risk_choropleth(nuts_gdf, predictions_continuous)
+
+    assert isinstance(m, folium.Map)
+
+
+def test_create_comparison_map_continuous(nuts_gdf, actual_continuous, predictions_continuous):
+    """Test that create_comparison_map handles continuous actual and predicted scores."""
+    m = create_comparison_map(nuts_gdf, actual_continuous, predictions_continuous)
+
+    assert isinstance(m, folium.Map)
 
 
 def test_choropleth_map_center(nuts_gdf, predictions):

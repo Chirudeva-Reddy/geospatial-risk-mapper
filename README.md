@@ -162,6 +162,10 @@ make run-app
 - **Actual vs. Predicted**: Layer toggle to compare true vs. predicted risk
 - **Feature Explorer**: Visualize feature distributions, top features by importance
 
+The app loads the saved model artifacts and runs inference on the same
+ISPRA + NUTS feature snapshot used for training, so the "predicted" values
+are the model's output on the current local data.
+
 ### FastAPI
 
 ```bash
