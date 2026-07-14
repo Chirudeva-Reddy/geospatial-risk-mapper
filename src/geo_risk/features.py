@@ -82,8 +82,15 @@ def engineer_features(
     flood_geom = gpd.GeoSeries(matched["flood_geometry"].to_numpy(), crs=matched.crs)
     intersection = region_geom.intersection(flood_geom)
 
-    # Build a GeoDataFrame of the clipped pieces and union them per region /
-    # hazard class so that overlapping flood polygons are counted only once.
+    # Build a GeoDataFrame of the clipped pieces and union them per region.
+    # The per-class P3/P2 areas are taken as the *sum* of clipped areas for
+    # that class (ISPRA mosaics are non-overlapping within a class), while the
+    # total flood area is the union of all three classes to avoid double
+    # counting where P1/P2/P3 overlap.
+    matched["inter_area_km2"] = (
+        intersection.to_crs(_EQUAL_AREA_CRS).area / 1e6
+    ).to_numpy()
+
     clipped = gpd.GeoDataFrame(
         {"NUTS_ID": matched["NUTS_ID"].to_numpy(), "hazard_class": matched["hazard_class"].to_numpy()},
         geometry=intersection,
@@ -94,20 +101,23 @@ def engineer_features(
     if not clipped.geometry.is_valid.all():
         clipped.geometry = clipped.geometry.buffer(0)
 
-    logger.info("Unioning clipped hazard polygons per region and class")
-    class_union = clipped.dissolve(by=["NUTS_ID", "hazard_class"])
-    class_union["area_km2"] = class_union.geometry.to_crs(_EQUAL_AREA_CRS).area / 1e6
-
-    class_area = class_union["area_km2"].unstack(level="hazard_class", fill_value=0.0)
-    class_area = class_area.reindex(columns=["P3", "P2", "P1"], fill_value=0.0)
-
-    # Total flood area = union of all hazard classes per region.
-    total_union = class_union.dissolve(by="NUTS_ID")
+    logger.info("Unioning clipped hazard polygons per region")
+    total_union = clipped.dissolve(by="NUTS_ID")
     total_union["area_km2"] = total_union.geometry.to_crs(_EQUAL_AREA_CRS).area / 1e6
 
     total_flood_area = total_union["area_km2"].rename("flood_area_km2")
-    p3_area = class_area["P3"].rename("p3_area_km2")
-    p2_area = class_area["P2"].rename("p2_area_km2")
+    p3_area = (
+        matched[matched["hazard_class"] == "P3"]
+        .groupby("NUTS_ID")["inter_area_km2"]
+        .sum()
+        .rename("p3_area_km2")
+    )
+    p2_area = (
+        matched[matched["hazard_class"] == "P2"]
+        .groupby("NUTS_ID")["inter_area_km2"]
+        .sum()
+        .rename("p2_area_km2")
+    )
 
     # Combine into a single features frame, filling regions with no matches as 0
     features_df = pd.concat([region_area_km2, total_flood_area, p3_area, p2_area], axis=1)
