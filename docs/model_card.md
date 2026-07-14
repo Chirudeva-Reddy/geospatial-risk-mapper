@@ -68,37 +68,53 @@
 
 ## Performance
 
-### Test Metrics
+Metrics below are from an actual training run against the real downloaded
+ISPRA shapefiles (85,460 hazard polygons across 21 NUTS 2 regions), not
+illustrative placeholders.
+
+### Classifier Test Metrics
 
 | Metric | Value |
 |--------|-------|
-| **Accuracy** | 0.68 |
-| **F1 (weighted)** | 0.66 |
-| **F1 (macro)** | 0.55 |
-| **ROC-AUC (OvR)** | N/A (small test set) |
+| **Accuracy** | 1.00 |
+| **F1 (weighted)** | 1.00 |
+| **F1 (macro)** | 1.00 |
 
-### Confusion Matrix
+**⚠️ This is target leakage, not genuine predictive skill.** `flood_risk_class`
+is derived directly from `flood_fraction` (via tertile binning — see
+"Target" above), and `flood_fraction` is also supplied to the model as an
+input feature. The classifier only has to learn the tertile boundaries of a
+feature it's directly given, on a 21-sample dataset with a ~4-5-sample test
+split — perfect accuracy here demonstrates the pipeline works end-to-end, not
+that flood risk is genuinely predictable from these features. A meaningful
+classifier evaluation would need to either drop `flood_fraction` as an input
+feature (predicting risk from the *other* features only) or evaluate on
+held-out regions never used to derive the target thresholds.
 
-```
-                Predicted
-              Low  Med  High
-Actual Low     2    0    0
-       Med     1    1    0
-       High    0    1    2
-```
+### Regressor Test Metrics
 
-**Interpretation**:
-- Model correctly classifies Low and High risk
-- Struggles with Medium risk (confusion with Low and High)
-- Modest improvement over random baseline (33% accuracy)
+| Metric | Value |
+|--------|-------|
+| **MAE** | 0.038 |
+| **RMSE** | 0.046 |
+| **R²** | 0.836 |
 
-### Feature Importance
+The regressor predicts `flood_fraction` directly and doesn't have the same
+leakage issue as the classifier, but R²=0.84 on a 4-5 sample test set from
+21 total regions should be read as "the pipeline works," not as a robust
+generalization estimate — see "Small Dataset" limitation below.
+
+### Feature Importance (Classifier)
 
 | Feature | Importance |
 |---------|-----------|
-| `flood_fraction` | 0.45 |
-| `hazard_p3_fraction` | 0.25 |
-| `region_area_km2` | 0.15 |
+| `flood_fraction` | 0.277 |
+| `hazard_p2_fraction` | 0.228 |
+| `hazard_p3_fraction` | 0.212 |
+| `high_hazard_indicator` | 0.116 |
+| `flood_area_km2` | 0.116 |
+| `region_area_km2` | 0.026 |
+| `p3_p2_ratio` | 0.025 |
 | `hazard_p2_fraction` | 0.10 |
 | `p3_p2_ratio` | 0.03 |
 | `flood_area_km2` | 0.02 |

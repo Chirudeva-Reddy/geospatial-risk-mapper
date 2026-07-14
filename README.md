@@ -117,21 +117,23 @@ data/                 # Raw geodata (gitignored; download script in README)
 
 ## Evaluation
 
-### Metrics (Test Set)
-- **Accuracy**: ~0.68
-- **F1 (weighted)**: ~0.66
-- **F1 (macro)**: ~0.55
+### Metrics (Test Set, real ISPRA data — 21 regions, 85,460 hazard polygons)
+- **Classifier accuracy**: 1.00 (see caveat below — this is target leakage, not genuine skill)
+- **Classifier F1 (weighted/macro)**: 1.00
+- **Regressor MAE**: 0.038 / **RMSE**: 0.046 / **R²**: 0.836
 
 ### Interpretation
-Model performs modestly above random baseline, reflecting:
-1. **Spatial autocorrelation**: Adjacent regions are not independent; random splits leak spatial information
-2. **Simple features**: Flood exposure alone is a weak signal for risk classification
-3. **Honest evaluation**: No spatial cross-validation (see Limitations)
-
-### Visualizations
-- **Confusion Matrix**: Shows model struggles with medium-risk class
-- **Predicted Risk Choropleth**: Regional risk map (Green/Orange/Red)
-- **Actual vs. Predicted**: Side-by-side comparison
+1. **Target leakage in the classifier**: `flood_risk_class` is derived from
+   `flood_fraction` via tertile binning, and `flood_fraction` is also fed to
+   the model as a feature — the classifier only has to learn the tertile
+   cutoffs of a value it's directly given. Perfect accuracy here demonstrates
+   the pipeline works end-to-end, not that flood risk is genuinely
+   predictable from these features.
+2. **Tiny dataset**: 21 NUTS 2 regions means a ~4-5 sample test set; no
+   metric here is a robust generalization estimate.
+3. **Spatial autocorrelation**: Adjacent regions are not independent; random
+   splits leak spatial information (see Limitations).
+4. See `docs/model_card.md` for full discussion.
 
 ## Usage
 
