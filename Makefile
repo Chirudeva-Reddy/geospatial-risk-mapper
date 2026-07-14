@@ -1,4 +1,4 @@
-.PHONY: install lint format typecheck test check run-api run-app train clean help
+.PHONY: install lint format typecheck test check run-api run-app train clean-cache clean help
 
 help:           ## Show this help message
 	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
@@ -32,13 +32,19 @@ train:          ## Train both classifier and regressor models
 		exit 1; \
 	fi
 	@echo "Training models with ISPRA flood data from: $(FLOOD_PATH)"
-	uv run python -c "from geo_risk.train import train_and_save_all; train_and_save_all(flood_path='$(FLOOD_PATH)')"
+	@echo "(Validated data is cached to data/processed/ after the first successful load;"
+	@echo " re-runs skip re-reading/re-validating the shapefiles unless the source changes."
+	@echo " Pass NO_CACHE=1 or run 'make clean-cache' to force a full reload.)"
+	uv run python -c "from geo_risk.train import train_and_save_all; train_and_save_all(flood_path='$(FLOOD_PATH)', use_cache=$(if $(NO_CACHE),False,True))"
 
 run-api:        ## Serve FastAPI locally (requires trained models)
 	uv run uvicorn geo_risk.api:app --reload
 
 run-app:        ## Serve Streamlit locally (requires trained models)
 	uv run streamlit run src/geo_risk/app.py
+
+clean-cache:    ## Remove cached validated geodata (data/processed/)
+	uv run python -c "from geo_risk.data import clear_cache; clear_cache()"
 
 clean:          ## Clean cache and build artifacts
 	rm -rf .pytest_cache .ruff_cache .pyright .coverage htmlcov models/
@@ -60,5 +66,10 @@ help-data:      ## Show data loading instructions
 	@echo ""
 	@echo "Step 4: Train models"
 	@echo "   make train FLOOD_PATH=data/ispra_shapefiles/"
+	@echo ""
+	@echo "Note: validated data is cached to data/processed/ after the first run."
+	@echo "      Re-runs skip re-reading/re-validating the shapefiles unless the"
+	@echo "      source files change. Use NO_CACHE=1 or 'make clean-cache' to force"
+	@echo "      a full reload."
 	@echo ""
 	@echo "For detailed documentation, see: data/README.md"

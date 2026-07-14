@@ -229,6 +229,7 @@ def train_and_save_all(
     nuts_path: str | Path | None = None,
     flood_path: str | Path | None = None,
     model_dir: str | Path | None = None,
+    use_cache: bool = True,
 ) -> dict:
     """End-to-end training pipeline: load data, engineer features, train both models.
 
@@ -236,6 +237,10 @@ def train_and_save_all(
         nuts_path: Optional path to NUTS GeoJSON.
         flood_path: Optional path to ISPRA flood data (required).
         model_dir: Directory to save artifacts.
+        use_cache: If True (default), reuse cached validated data from a
+            previous run when the source files haven't changed, skipping the
+            expensive shapefile read + geometry validation. Set False (or
+            run `geo_risk.data.clear_cache()`) to force a full reload.
 
     Returns:
         Dictionary with both classifier and regressor results.
@@ -248,12 +253,10 @@ def train_and_save_all(
         # Load data
         print("\n[1/5] Loading geospatial data...")
         print("      - Loading NUTS 2 administrative boundaries...")
+        print("      - Loading ISPRA flood hazard shapefiles (HPH, MPH, LPH)...")
+        print("      - This may take a few minutes for large datasets (first run only; cached after)...")
         try:
-            print("      - Loading ISPRA flood hazard shapefiles (HPH, MPH, LPH)...")
-            print("      - This may take a few minutes for large datasets...")
-            print("      - Processing: ", end="", flush=True)
-            nuts_gdf, flood_gdf = load_and_validate(nuts_path, flood_path)
-            print("done")
+            nuts_gdf, flood_gdf = load_and_validate(nuts_path, flood_path, use_cache=use_cache)
             print(f"      ✓ Loaded {len(nuts_gdf)} regions and {len(flood_gdf)} hazard polygons")
         except FileNotFoundError as e:
             print("\n      ✗ ERROR: Data files not found")

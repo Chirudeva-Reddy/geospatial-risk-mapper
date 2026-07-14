@@ -11,6 +11,11 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+# Equal-area CRS used only for area computation (ETRS89-extended / LAEA Europe),
+# consistent with the area calculation used for flood hazard polygons in data.py.
+# Geometries are NOT stored in this CRS; it's used transiently for accurate km² areas.
+_EQUAL_AREA_CRS = "EPSG:3035"
+
 
 def engineer_features(
     nuts_gdf: gpd.GeoDataFrame,
@@ -40,10 +45,12 @@ def engineer_features(
     if nuts_gdf.crs != flood_gdf.crs:
         raise ValueError(f"CRS mismatch: {nuts_gdf.crs} != {flood_gdf.crs}")
 
-    # Region area in km² (rough approximation: degrees to km at equator ~111 km/degree)
-    region_area_km2 = (nuts_gdf.set_index("NUTS_ID").geometry.area * 111 * 111).rename(
-        "region_area_km2"
-    )
+    # Region area in km², computed via an equal-area projection for accuracy
+    # (a naive degrees-to-km conversion is latitude-dependent and was previously
+    # a rough approximation here).
+    region_area_km2 = (
+        nuts_gdf.set_index("NUTS_ID").geometry.to_crs(_EQUAL_AREA_CRS).area / 1e6
+    ).rename("region_area_km2")
 
     # Spatial join: find flood areas within each NUTS region
     logger.info(

@@ -28,11 +28,11 @@ This directory contains raw geospatial data for the flood risk prediction projec
 **Source**: ISPRA (Istituto Superiore per la Protezione e la Ricerca Ambientale) / Italian Ministry of Environment
 
 - **Dataset**: Aree a pericolosità idraulica (Flood Hazard Areas)
-- **Format**: GeoPackage (.gpkg) or WMS service
-- **CRS**: EPSG:4326 (WGS84)
+- **Format**: Shapefile (see "ISPRA Flood Data" section above — one shapefile per hazard class)
+- **CRS**: Native shapefile CRS (typically EPSG:4326 or EPSG:32632/33); reprojected automatically
 - **Coverage**: Italy (national mosaic)
 - **License**: CC BY-SA 4.0 IT (Creative Commons Attribution-ShareAlike)
-- **URL**: http://www.pcn.minambiente.it/geoportal/
+- **Download**: https://idrogeo.isprambiente.it/app/page/open-data
 - **Reference**: D.Lgs. 49/2010 (Flood Directive implementation)
 
 **Hazard Classes**:
@@ -40,10 +40,17 @@ This directory contains raw geospatial data for the flood risk prediction projec
 - **P2**: Media probabilità (Medium probability) — return period 100-200 years
 - **P3**: Elevata probabilità (High probability) — return period 20-50 years
 
-**Attributes**:
-- `hazard_class`: P1, P2, or P3
-- `area_km2`: Area of hazard zone in km²
+**Raw attributes (as distributed by ISPRA)**:
+- `scenario`: Hazard scenario code (the *only* attribute column in the real shapefiles)
 - `geometry`: Polygon boundary
+
+**Derived attributes (computed by `geo_risk.data.load_ispra_flood_hazard`)**:
+- `hazard_class`: P1, P2, or P3 — inferred from which shapefile (LPH/MPH/HPH) a
+  polygon came from, since ISPRA does not encode this in a shared attribute.
+- `area_km2`: Area of hazard zone in km² — computed from geometry via an
+  equal-area projection (EPSG:3035), since ISPRA does not provide a
+  pre-computed area attribute. **Do not assume `area_km2` exists as a raw
+  column if you inspect the shapefiles directly** — it's derived, not native.
 
 ## Coordinate Reference System (CRS)
 
@@ -158,17 +165,49 @@ gdf.geometry = gdf.geometry.buffer(0)
 
 This is a common workaround for self-intersecting or malformed polygons.
 
+### Caching Validated Data
+
+Reading and validating the full national ISPRA mosaic (~1GB across 3
+shapefiles) can take a while. `load_and_validate()` caches the validated
+result as GeoParquet in `data/processed/` so that a failure in a *later*
+pipeline stage (feature engineering, training) doesn't force re-reading and
+re-validating the shapefiles from scratch:
+
+```python
+from geo_risk.data import load_and_validate, clear_cache
+
+# First call: reads shapefiles, validates geometry, writes cache
+nuts_gdf, flood_gdf = load_and_validate(flood_path="data/ispra_shapefiles/")
+
+# Subsequent calls with the same source files: instant cache hit
+nuts_gdf, flood_gdf = load_and_validate(flood_path="data/ispra_shapefiles/")
+
+# Force a full reload (e.g. after replacing the source shapefiles)
+nuts_gdf, flood_gdf = load_and_validate(flood_path="data/ispra_shapefiles/", use_cache=False)
+# or just delete the cache:
+clear_cache()
+```
+
+The cache is automatically invalidated if the source shapefiles change
+(detected via file size + modification time), so switching `flood_path` to a
+different dataset is safe — it won't silently serve stale data.
+
+From the CLI: `make train FLOOD_PATH=data/ispra_shapefiles/` uses the cache
+by default; pass `NO_CACHE=1` or run `make clean-cache` to force a full reload.
+
 ## File Structure
 
 ```
 data/
 ├── README.md                    # This file
-├── raw/                         # Raw geodata (gitignored)
-│   ├── NUTS_RG_60M_2024_4326_LEVL_2.geojson
-│   └── ispra_flood_hazard.gpkg
-└── processed/                   # Processed features (gitignored)
-    ├── features.csv
-    └── target.csv
+├── ispra_shapefiles/             # Downloaded ISPRA shapefiles (gitignored)
+│   ├── HPH_*.shp/.shx/.dbf/.prj  # High hazard (P3)
+│   ├── MPH_*.shp/.shx/.dbf/.prj  # Medium hazard (P2)
+│   └── LPH_*.shp/.shx/.dbf/.prj  # Low hazard (P1)
+└── processed/                    # Cached validated GeoDataFrames (gitignored)
+    ├── nuts_validated.parquet
+    ├── flood_validated.parquet
+    └── cache_meta.json           # Fingerprints used to detect stale cache
 ```
 
 ## Licensing & Attribution

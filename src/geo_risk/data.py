@@ -4,6 +4,8 @@ Loads ISPRA flood hazard boundaries and NUTS administrative regions,
 handles CRS reprojection, and validates spatial data integrity.
 """
 
+import hashlib
+import json
 import logging
 from pathlib import Path
 
@@ -13,6 +15,82 @@ import pandas as pd
 from .config import settings
 
 logger = logging.getLogger(__name__)
+
+# Equal-area CRS used only for area computation (ETRS89-extended / LAEA Europe).
+# Chosen because it gives accurate km² areas for Italy/Europe; geometries are
+# NOT stored in this CRS, it's used transiently to compute area_km2.
+_EQUAL_AREA_CRS = "EPSG:3035"
+
+# Cache of validated GeoDataFrames, so a downstream failure (e.g. in feature
+# engineering or training) doesn't force re-reading/re-validating large
+# shapefiles from scratch. See load_and_validate(use_cache=...).
+_CACHE_SUBDIR = "processed"
+_NUTS_CACHE_NAME = "nuts_validated.parquet"
+_FLOOD_CACHE_NAME = "flood_validated.parquet"
+_CACHE_META_NAME = "cache_meta.json"
+
+
+def _area_km2(gdf: gpd.GeoDataFrame) -> pd.Series:
+    """Compute per-geometry area in km² using an equal-area projection.
+
+    Does not mutate or reproject the input GeoDataFrame; the equal-area
+    projection is only used transiently for an accurate area calculation.
+
+    Args:
+        gdf: GeoDataFrame with a valid CRS.
+
+    Returns:
+        Series of areas in km², aligned to gdf's index.
+    """
+    return gdf.geometry.to_crs(_EQUAL_AREA_CRS).area / 1e6
+
+
+def _fingerprint_dir(path: Path, patterns: tuple[str, ...]) -> str:
+    """Compute a cheap content fingerprint for files matching patterns in a directory.
+
+    Used to detect when cached data is stale (e.g. flood_path points at
+    different/updated files) without re-reading the (large) files themselves.
+
+    Args:
+        path: Directory to fingerprint.
+        patterns: Glob patterns to include (e.g. ("*.shp", "*.dbf")).
+
+    Returns:
+        Hex digest summarizing file names, sizes, and modification times.
+    """
+    entries = []
+    for pattern in patterns:
+        for f in sorted(path.glob(pattern)):
+            stat = f.stat()
+            entries.append(f"{f.name}:{stat.st_size}:{stat.st_mtime}")
+    digest = hashlib.sha256("|".join(entries).encode()).hexdigest()
+    return digest
+
+
+def _cache_dir(cache_dir: str | Path | None) -> Path:
+    resolved = Path(cache_dir) if cache_dir is not None else Path(settings.data_dir) / _CACHE_SUBDIR
+    resolved.mkdir(parents=True, exist_ok=True)
+    return resolved
+
+
+def clear_cache(cache_dir: str | Path | None = None) -> None:
+    """Delete cached validated GeoDataFrames, forcing a fresh reload next time.
+
+    Args:
+        cache_dir: Directory containing cache files. Defaults to
+            {settings.data_dir}/processed.
+    """
+    resolved = _cache_dir(cache_dir)
+    removed = []
+    for name in (_NUTS_CACHE_NAME, _FLOOD_CACHE_NAME, _CACHE_META_NAME):
+        f = resolved / name
+        if f.exists():
+            f.unlink()
+            removed.append(f.name)
+    if removed:
+        print(f"Removed cache files: {', '.join(removed)}")
+    else:
+        print("No cache files found; nothing to remove.")
 
 
 def load_nuts_boundaries(path: str | Path | None = None) -> gpd.GeoDataFrame:
@@ -149,6 +227,15 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
         # Add hazard class column
         gdf["hazard_class"] = hazard_class
 
+        # ISPRA shapefiles do not include a usable area attribute (real files
+        # only carry a 'scenario' column + geometry) — compute area ourselves
+        # from geometry using an equal-area projection rather than assuming
+        # an 'area_km2' column exists.
+        if "area_km2" not in gdf.columns:
+            print("            Computing area from geometry...", end=" ", flush=True)
+            gdf["area_km2"] = _area_km2(gdf)
+            print("done")
+
         # Reproject to target CRS
         if gdf.crs != settings.target_crs:
             print(f"            Reprojecting to {settings.target_crs}...", end=" ", flush=True)
@@ -173,12 +260,24 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
 def load_and_validate(
     nuts_path: str | Path | None = None,
     flood_path: str | Path | None = None,
+    use_cache: bool = True,
+    cache_dir: str | Path | None = None,
 ) -> tuple[gpd.GeoDataFrame, gpd.GeoDataFrame]:
     """Load and validate both NUTS boundaries and flood hazard data.
+
+    Caches the validated result to GeoParquet so that a failure in a later
+    pipeline stage (feature engineering, training) doesn't force re-reading
+    and re-validating large ISPRA shapefiles from scratch. The cache is
+    automatically invalidated if the source files change (by size/mtime).
 
     Args:
         nuts_path: Optional path to NUTS GeoJSON.
         flood_path: Optional path to ISPRA flood data.
+        use_cache: If True (default), reuse a cached validated result when
+            available and the source files haven't changed. Set False to
+            force a full reload.
+        cache_dir: Directory for cache files. Defaults to
+            {settings.data_dir}/processed.
 
     Returns:
         Tuple of (nuts_gdf, flood_gdf), both in target CRS.
@@ -186,6 +285,42 @@ def load_and_validate(
     Raises:
         ValueError: If data is invalid or CRS mismatch.
     """
+    resolved_cache_dir = _cache_dir(cache_dir)
+    nuts_cache_path = resolved_cache_dir / _NUTS_CACHE_NAME
+    flood_cache_path = resolved_cache_dir / _FLOOD_CACHE_NAME
+    meta_path = resolved_cache_dir / _CACHE_META_NAME
+
+    nuts_fingerprint = str(Path(nuts_path).resolve()) if nuts_path is not None else "remote:datahub.io"
+    flood_fingerprint = (
+        _fingerprint_dir(Path(flood_path), ("*.shp", "*.dbf", "*.shx", "*.prj"))
+        if flood_path is not None
+        else None
+    )
+
+    if use_cache and nuts_cache_path.exists() and flood_cache_path.exists() and meta_path.exists():
+        try:
+            cached_meta = json.loads(meta_path.read_text())
+        except (json.JSONDecodeError, OSError):
+            cached_meta = {}
+        cache_matches = (
+            cached_meta.get("nuts_fingerprint") == nuts_fingerprint
+            and cached_meta.get("flood_fingerprint") == flood_fingerprint
+        )
+        if cache_matches:
+            print(
+                "        Cache hit — loading validated data from "
+                f"{resolved_cache_dir}/ (skipping shapefile read + validation)...",
+                end=" ",
+                flush=True,
+            )
+            nuts_gdf = gpd.read_parquet(nuts_cache_path)
+            flood_gdf = gpd.read_parquet(flood_cache_path)
+            print(f"done ({len(nuts_gdf)} regions, {len(flood_gdf)} hazard polygons)")
+            logger.info("Loaded validated NUTS and flood data from cache")
+            return nuts_gdf, flood_gdf
+        else:
+            print("        Cache found but source data has changed — reloading from source.")
+
     nuts_gdf = load_nuts_boundaries(nuts_path)
     flood_gdf = load_ispra_flood_hazard(flood_path)
 
@@ -224,4 +359,14 @@ def load_and_validate(
     logger.info(
         f"Loaded {len(nuts_gdf)} NUTS regions and {len(flood_gdf)} flood areas"
     )
+
+    if use_cache:
+        print(f"        Caching validated data to {resolved_cache_dir}/ for faster re-runs...", end=" ", flush=True)
+        nuts_gdf.to_parquet(nuts_cache_path)
+        flood_gdf.to_parquet(flood_cache_path)
+        meta_path.write_text(
+            json.dumps({"nuts_fingerprint": nuts_fingerprint, "flood_fingerprint": flood_fingerprint})
+        )
+        print("done")
+
     return nuts_gdf, flood_gdf
