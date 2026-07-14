@@ -11,6 +11,8 @@ import joblib
 import pandas as pd
 from pydantic import BaseModel, Field
 
+from .features import add_spatial_features
+
 logger = logging.getLogger(__name__)
 
 RISK_LABELS = {0: "Low", 1: "Medium", 2: "High"}
@@ -107,6 +109,14 @@ class RiskPredictor:
         """
         if isinstance(features, dict):
             features = pd.Series(features)
+        features = features.copy()
+
+        # Compute derived features if the caller only supplied base inputs.
+        if (
+            all(name in features.index for name in ("hazard_p3_fraction", "hazard_p2_fraction"))
+            and not all(name in features.index for name in self.feature_names)
+        ):
+            features = add_spatial_features(pd.DataFrame([features])).iloc[0]
 
         # Validate features
         if not all(name in features.index for name in self.feature_names):
@@ -149,6 +159,14 @@ class RiskPredictor:
         """
         if isinstance(features, dict):
             features = pd.Series(features)
+        features = features.copy()
+
+        # Compute derived features if the caller only supplied base inputs.
+        if (
+            all(name in features.index for name in ("hazard_p3_fraction", "hazard_p2_fraction"))
+            and not all(name in features.index for name in self.feature_names)
+        ):
+            features = add_spatial_features(pd.DataFrame([features])).iloc[0]
 
         # Validate features
         if not all(name in features.index for name in self.feature_names):
