@@ -81,23 +81,33 @@ def engineer_features(
     region_geom = gpd.GeoSeries(matched.geometry.to_numpy(), crs=matched.crs)
     flood_geom = gpd.GeoSeries(matched["flood_geometry"].to_numpy(), crs=matched.crs)
     intersection = region_geom.intersection(flood_geom)
-    matched["inter_area_km2"] = (intersection.to_crs(_EQUAL_AREA_CRS).area / 1e6).to_numpy()
 
-    # Aggregate clipped flood area per region (vectorized groupby, not a per-region loop)
-    logger.info("Aggregating flood exposure per region (groupby)")
-    total_flood_area = matched.groupby("NUTS_ID")["inter_area_km2"].sum().rename("flood_area_km2")
-    p3_area = (
-        matched[matched["hazard_class"] == "P3"]
-        .groupby("NUTS_ID")["inter_area_km2"]
-        .sum()
-        .rename("p3_area_km2")
+    # Build a GeoDataFrame of the clipped pieces and union them per region /
+    # hazard class so that overlapping flood polygons are counted only once.
+    clipped = gpd.GeoDataFrame(
+        {"NUTS_ID": matched["NUTS_ID"].to_numpy(), "hazard_class": matched["hazard_class"].to_numpy()},
+        geometry=intersection,
+        crs=matched.crs,
     )
-    p2_area = (
-        matched[matched["hazard_class"] == "P2"]
-        .groupby("NUTS_ID")["inter_area_km2"]
-        .sum()
-        .rename("p2_area_km2")
-    )
+    # Drop empty touches/lines and make invalid geometries valid before unioning.
+    clipped = clipped[~clipped.geometry.is_empty].copy()
+    if not clipped.geometry.is_valid.all():
+        clipped.geometry = clipped.geometry.buffer(0)
+
+    logger.info("Unioning clipped hazard polygons per region and class")
+    class_union = clipped.dissolve(by=["NUTS_ID", "hazard_class"])
+    class_union["area_km2"] = class_union.geometry.to_crs(_EQUAL_AREA_CRS).area / 1e6
+
+    class_area = class_union["area_km2"].unstack(level="hazard_class", fill_value=0.0)
+    class_area = class_area.reindex(columns=["P3", "P2", "P1"], fill_value=0.0)
+
+    # Total flood area = union of all hazard classes per region.
+    total_union = class_union.dissolve(by="NUTS_ID")
+    total_union["area_km2"] = total_union.geometry.to_crs(_EQUAL_AREA_CRS).area / 1e6
+
+    total_flood_area = total_union["area_km2"].rename("flood_area_km2")
+    p3_area = class_area["P3"].rename("p3_area_km2")
+    p2_area = class_area["P2"].rename("p2_area_km2")
 
     # Combine into a single features frame, filling regions with no matches as 0
     features_df = pd.concat([region_area_km2, total_flood_area, p3_area, p2_area], axis=1)
