@@ -10,10 +10,10 @@ import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
 
-from .data import load_and_validate
-from .features import add_spatial_features, engineer_features
-from .mapping import create_comparison_map, create_risk_choropleth
-from .predict import RiskPredictor
+from geo_risk.data import load_and_validate
+from geo_risk.features import add_spatial_features, engineer_features
+from geo_risk.mapping import create_comparison_map, create_risk_choropleth
+from geo_risk.predict import RiskPredictor
 
 logger = logging.getLogger(__name__)
 
