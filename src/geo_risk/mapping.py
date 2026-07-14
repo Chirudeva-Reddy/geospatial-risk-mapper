@@ -7,6 +7,7 @@ import branca.colormap
 import folium
 import geopandas as gpd
 import pandas as pd
+from branca.colormap import LinearColormap, StepColormap
 from jinja2 import Template
 
 logger = logging.getLogger(__name__)
@@ -101,24 +102,35 @@ def _create_colormap(
     is_continuous: bool,
     position: str = "topright",
     caption: str = "Risk",
-) -> branca.colormap.StepColormap:
+) -> branca.colormap.ColorMap:
     """Build a small, custom-positioned color scale for the map legend.
 
     Classification data uses an index of [0, 1, 2, 3] so the 0/1/2 classes
-    map to the green/orange/red colors. Continuous data uses the same
-    0.33/0.67 thresholds used by the regressor/score binning.
+    map to the green/orange/red colors. Continuous data uses a
+    LinearColormap so the exact score is mapped to a smooth gradient.
     """
     colors = list(RISK_COLORS.values())
-    index = [0.0, 0.33, 0.67, 1.0] if is_continuous else [0, 1, 2, 3]
 
-    colormap = branca.colormap.StepColormap(
-        colors,
-        index=index,
-        vmin=index[0],
-        vmax=index[-1],
-        caption=caption,
-        max_labels=4,
-    )
+    if is_continuous:
+        # Smooth gradient across the 0-1 score range.
+        colormap = LinearColormap(
+            colors,
+            index=[0.0, 0.5, 1.0],
+            vmin=0.0,
+            vmax=1.0,
+            caption=caption,
+            tick_labels=[0.0, 0.25, 0.5, 0.75, 1.0],
+        )
+    else:
+        colormap = StepColormap(
+            colors,
+            index=[0, 1, 2, 3],
+            vmin=0,
+            vmax=3,
+            caption=caption,
+            max_labels=4,
+        )
+
     # Keep the legend compact so it does not overflow the map corners.
     colormap.width = 250
     colormap.height = 40
@@ -130,7 +142,7 @@ def _create_colormap(
 def _add_risk_geojson(
     m: folium.Map,
     gdf: gpd.GeoDataFrame,
-    colormap: branca.colormap.StepColormap,
+    colormap: branca.colormap.ColorMap,
     name: str,
     show: bool = True,
 ) -> None:
