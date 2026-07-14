@@ -1,16 +1,20 @@
-# Model Card: Flood Risk Classifier
+# Model Card: Flood Risk Classifier & Regressor
 
 ## Model Details
 
-**Model Name**: Geospatial Flood Risk Classifier  
-**Version**: 1.0  
-**Date**: 2026-07-13  
-**Type**: RandomForest Classifier (3-class)  
-**Framework**: scikit-learn  
+**Model Name**: Geospatial Flood Risk Classifier & Regressor
+**Version**: 1.1
+**Date**: 2026-07-14
+**Type**: Two separate models trained on the same features:
+  - RandomForestClassifier (3-class risk)
+  - RandomForestRegressor (continuous risk score)
+**Framework**: scikit-learn
 
 ## Intended Use
 
-**Primary Use**: Predict flood risk class (Low/Medium/High) for Italian NUTS 2 administrative regions based on flood hazard exposure.
+**Primary Use**: Predict flood risk — either as a class (Low/Medium/High) or
+a continuous score (0-1) — for Italian NUTS 2 administrative regions based on
+flood hazard exposure.
 
 **Intended Users**: Environmental planners, disaster management agencies, climate risk analysts.
 
@@ -22,38 +26,41 @@
 
 ## Model Architecture
 
-**Algorithm**: Random Forest Classifier
+**Algorithms**: RandomForestClassifier (`train_classifier`) and
+RandomForestRegressor (`train_regressor`) — both trained on the identical
+feature set below, differing only in target and split strategy.
 
-**Hyperparameters**:
+**Hyperparameters** (both models):
 - `n_estimators`: 100
 - `max_depth`: 10
 - `min_samples_split`: 5
 - `min_samples_leaf`: 2
 - `random_state`: 42
 
-**Input Features** (7):
-1. `flood_area_km2`: Total flood hazard area in region (km²)
+**Input Features** (7, identical for both models):
+1. `flood_area_km2`: Flood hazard area actually within the region (km²) — clipped, not whole-polygon
 2. `flood_fraction`: Fraction of region covered by flood hazard (0-1)
 3. `hazard_p3_fraction`: Fraction covered by high-risk (P3) hazard (0-1)
 4. `hazard_p2_fraction`: Fraction covered by medium-risk (P2) hazard (0-1)
-5. `region_area_km2`: Total region area (km²)
+5. `region_area_km2`: Total region area (km², equal-area projection)
 6. `p3_p2_ratio`: Interaction feature (high/medium hazard ratio)
 7. `high_hazard_indicator`: Binary flag (P3 presence)
 
-**Output**: Risk class (0=Low, 1=Medium, 2=High) + confidence score
+**Output**:
+- Classifier: Risk class (0=Low, 1=Medium, 2=High) + confidence + per-class probabilities
+- Regressor: Continuous risk score (0-1, directly predicts `flood_fraction`) + risk label
 
 ## Training Data
 
 **Dataset**: NUTS 2 regions (Italy) × ISPRA flood hazard areas
 
-**Size**: 21 samples (NUTS 2 regions)
-- Train: 17 samples (80%)
-- Test: 4 samples (20%)
+**Size**: 21 samples (NUTS 2 regions), 85,460 ISPRA flood hazard polygons (28,791 P3 / 29,493 P2 / 27,176 P1)
+- Classifier train/test: ~17/4 (80/20 stratified split)
+- Regressor train/test: ~17/4 (80/20 plain split)
 
-**Target Distribution**:
-- Low (0): ~33%
-- Medium (1): ~33%
-- High (2): ~33%
+**Target Distribution (classifier)**: Exactly 7/7/7 (Low/Medium/High) — by
+construction, since the target is assigned via tertile binning of
+`flood_fraction` (not fixed percentage thresholds; see "Model Architecture").
 
 **Data Source**:
 - **Boundaries**: Eurostat GISCO (https://datahub.io/core/geo-nuts-administrative-boundaries/)
@@ -63,8 +70,14 @@
 **Preprocessing**:
 - CRS reprojection to EPSG:4326 (WGS84)
 - Geometry validation and repair (buffer(0) for invalid polygons)
-- Spatial join (NUTS ∩ Hazard)
-- Feature aggregation per region
+- Spatial join (NUTS ∩ Hazard, `predicate="intersects"`) followed by clipping
+  each matched flood polygon to the region geometry — needed because ISPRA
+  hazard polygons often span multiple regions; summing whole-polygon area
+  instead of the clipped intersection overcounted exposure by ~10x for most
+  regions in testing
+- Area computed via equal-area projection (EPSG:3035), since neither NUTS nor
+  ISPRA provide a usable pre-computed area attribute
+- Feature aggregation per region (vectorized groupby)
 
 ## Performance
 
@@ -115,12 +128,11 @@ generalization estimate — see "Small Dataset" limitation below.
 | `flood_area_km2` | 0.116 |
 | `region_area_km2` | 0.026 |
 | `p3_p2_ratio` | 0.025 |
-| `hazard_p2_fraction` | 0.10 |
-| `p3_p2_ratio` | 0.03 |
-| `flood_area_km2` | 0.02 |
-| `high_hazard_indicator` | 0.00 |
 
-**Key Insight**: Flood exposure fraction is the dominant signal; absolute area and hazard class distribution are secondary.
+**Key Insight**: `flood_fraction`, `hazard_p2_fraction`, and
+`hazard_p3_fraction` dominate (combined ~72% of importance) — unsurprising
+given `flood_fraction` is also what the target is derived from (see target
+leakage caveat above). `region_area_km2` and `p3_p2_ratio` contribute least.
 
 ## Limitations
 
@@ -198,11 +210,11 @@ NUTS 2 is administrative (not hydrological) unit; ~5,000 km² per region.
 
 - **Model Framework**: scikit-learn (https://scikit-learn.org/)
 - **Geospatial**: GeoPandas (https://geopandas.org/)
-- **Data**: ISPRA (http://www.pcn.minambiente.it/), Eurostat GISCO
+- **Data**: ISPRA IdroGEO (https://idrogeo.isprambiente.it/), Eurostat GISCO
 - **Spatial Autocorrelation**: Dormann et al. (2007), "Methods to account for spatial autocorrelation in the analysis of species distributional data"
 
 ---
 
-**Model Card Version**: 1.0  
-**Last Updated**: 2026-07-13  
+**Model Card Version**: 1.1
+**Last Updated**: 2026-07-14
 **Maintainer**: Luke Gardiner

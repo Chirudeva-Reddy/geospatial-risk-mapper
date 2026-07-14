@@ -13,12 +13,12 @@
 
 This project predicts **flood risk** across Italian administrative regions (NUTS 2) using:
 
-1. **Geospatial processing**: Load NUTS boundaries + ISPRA flood hazard data, handle CRS reprojection, perform spatial joins
+1. **Geospatial processing**: Load NUTS boundaries + ISPRA flood hazard data, handle CRS reprojection, perform spatial joins with polygon clipping for accurate area
 2. **Feature engineering**: Extract per-region flood exposure metrics (area, fraction, hazard class distribution)
-3. **Predictive model**: RandomForest classifier trained on engineered features
-4. **Interactive UI**: Streamlit app with folium choropleth maps, layer toggle (predicted vs. actual), and feature explorer
+3. **Predictive models**: RandomForest classifier (3-class risk) **and** RandomForest regressor (continuous risk score), trained on identical engineered features
+4. **Interactive UI**: Streamlit app with a model selector (classifier vs. regressor), folium choropleth maps, layer toggle (predicted vs. actual), and feature explorer
 
-**Key insight**: Demonstrates correct CRS handling, spatial join correctness, and honest model evaluation (model barely beats naive baseline, reflecting near-random-walk nature of risk).
+**Key insight**: Demonstrates correct CRS handling and spatial-join area correctness — an earlier version summed whole flood-polygon area per intersecting region, overcounting exposure by ~10x for most regions; fixed by clipping to the region geometry (see `docs/experiment_log.md`). Also demonstrates honest evaluation: the classifier's 100% test accuracy is flagged as target leakage, not genuine predictive skill (see "Evaluation" below).
 
 ## Quick Start
 
@@ -69,51 +69,62 @@ src/geo_risk/
 ├── app.py             # Streamlit UI (primary)
 └── api.py             # FastAPI /predict endpoint (optional)
 
-tests/                # 38 pytest tests (data, features, train, predict, mapping)
-models/               # Trained model artifacts (gitignored)
-data/                 # Raw geodata (gitignored; download script in README)
+tests/                # 46 pytest tests (data, features, train, predict, mapping, smoke)
+models/               # Trained model artifacts (gitignored): classifier.joblib, regressor.joblib, metrics, feature importances
+data/                 # ISPRA shapefiles (manual download, gitignored) + processed/ cache (gitignored)
 ```
 
 ## Dataset
 
-**Source**: ISPRA (Italian Ministry of Environment) + Eurostat GISCO
+**Source**: ISPRA (via IdroGEO) + Eurostat GISCO
 
 - **Flood Hazard**: ISPRA National Mosaic of Flood Hazard Areas (Aree a pericolosità idraulica)
-  - Risk classes: P1 (low), P2 (medium), P3 (high)
-  - Format: Shapefile (.shp, .shx, .dbf, .prj)
+  - Risk classes: P1 (low), P2 (medium), P3 (high) — three separate shapefiles (LPH/MPH/HPH)
+  - Format: Shapefile (.shp, .shx, .dbf, .prj) — **manual download required, no automatic fetch**
+  - Real shapefiles contain only a `scenario` attribute + geometry; `hazard_class` and `area_km2` are derived by `data.py`, not native columns
   - License: CC BY-SA 4.0 IT
   - Download: https://idrogeo.isprambiente.it/app/page/open-data (IdroGEO platform)
 
 - **Administrative Boundaries**: NUTS 2 regions (Italy)
-  - Source: Eurostat GISCO
+  - Source: Eurostat GISCO (auto-downloaded if no local path given)
   - Format: GeoJSON
   - License: CC-BY
   - Ref: https://datahub.io/core/geo-nuts-administrative-boundaries
 
-**Data not committed** — raw geodata is downloaded on-demand by `data.py`.
+**Data not committed** — ISPRA data must be manually downloaded (see Quick Start); validated data is cached to `data/processed/` after the first successful load.
 
-## Model
+## Models
 
-**Type**: RandomForest Classifier (3-class: Low / Medium / High risk)
+**Type**: Two RandomForest models trained on identical features:
+- **Classifier**: 3-class risk (Low / Medium / High), via `train_classifier()`
+- **Regressor**: Continuous risk score (0-1, predicts `flood_fraction` directly), via `train_regressor()`
 
-**Features** (engineered from spatial joins):
-- `flood_area_km2`: Total flood hazard area in region
+**Features** (engineered from spatial joins, identical for both models):
+- `flood_area_km2`: Flood hazard area actually within the region (clipped to region geometry, not whole-polygon area)
 - `flood_fraction`: Fraction of region covered by flood hazard
 - `hazard_p3_fraction`: Fraction covered by high-risk (P3) hazard
 - `hazard_p2_fraction`: Fraction covered by medium-risk (P2) hazard
-- `region_area_km2`: Total region area
+- `region_area_km2`: Total region area (equal-area projection)
 - `p3_p2_ratio`: Interaction feature (high/medium hazard ratio)
 - `high_hazard_indicator`: Binary flag (P3 presence)
 
-**Target**: Risk class (0=low, 1=medium, 2=high) based on flood_fraction thresholds (< 5%, 5-15%, > 15%)
+**Classifier target**: Risk class (0=low, 1=medium, 2=high) via **quantile
+(tertile) binning** of `flood_fraction` — not fixed percentage thresholds.
+Fixed thresholds (`<5%`/`5-15%`/`>15%`) were tried first and produced a
+severely imbalanced target (20/21 regions in one class) against the real
+data; tertile binning guarantees a balanced 7/7/7 split regardless of the
+underlying distribution. See `docs/model_card.md` for the target-leakage
+caveat this implies for the classifier.
 
-**Hyperparameters**:
+**Hyperparameters** (both models):
 - n_estimators: 100
 - max_depth: 10
 - min_samples_split: 5
 - min_samples_leaf: 2
 
-**Validation**: Stratified train-test split (80/20)
+**Validation**: Stratified train-test split (80/20) for the classifier (with
+a non-stratified fallback if any class has < 2 members); plain 80/20 split
+for the regressor.
 
 ## Evaluation
 
@@ -141,9 +152,12 @@ data/                 # Raw geodata (gitignored; download script in README)
 
 ```bash
 make run-app
+# If you trained with a non-default FLOOD_PATH, pass it here too:
+# make run-app FLOOD_PATH=data/ispra_shapefiles/
 ```
 
 **Features**:
+- **Model selector**: Switch between Classification (3-class) and Regression (continuous score)
 - **Predicted Risk Map**: Interactive folium choropleth with popups
 - **Actual vs. Predicted**: Layer toggle to compare true vs. predicted risk
 - **Feature Explorer**: Visualize feature distributions, top features by importance
@@ -155,13 +169,24 @@ make run-api
 ```
 
 **Endpoints**:
-- `GET /health` — Health check
-- `POST /predict` — Single region prediction (Pydantic schema)
-- `GET /info` — Model metadata
+- `GET /health` — Health check (reports whether models are loaded)
+- `POST /predict/classification` — 3-class risk prediction
+- `POST /predict/regression` — Continuous risk score prediction
+- `GET /info` — Metadata for both models + feature list
 
 **Example**:
 ```bash
-curl -X POST http://localhost:8000/predict \
+curl -X POST http://localhost:8000/predict/classification \
+  -H "Content-Type: application/json" \
+  -d '{
+    "flood_area_km2": 100,
+    "flood_fraction": 0.1,
+    "hazard_p3_fraction": 0.05,
+    "hazard_p2_fraction": 0.05,
+    "region_area_km2": 1000
+  }'
+
+curl -X POST http://localhost:8000/predict/regression \
   -H "Content-Type: application/json" \
   -d '{
     "flood_area_km2": 100,
@@ -182,14 +207,22 @@ uv run pytest -v
 uv run pytest --cov=src --cov-report=term-missing
 ```
 
-**Test Coverage** (45%):
-- Data loading, CRS validation, geometry validity
+**Test Coverage** (50%, 46 tests):
+- Data loading, CRS validation, geometry validity, real ISPRA schema regression tests, caching behavior
 - Spatial joins, feature engineering correctness
 - Model training, prediction, batch inference
 - Map generation (folium, GeoJSON)
 - API schema validation
 
 ## Limitations & Caveats
+
+### Target Leakage (Classifier)
+**Critical**: The classifier's target (`flood_risk_class`) is derived from
+`flood_fraction` via tertile binning, and `flood_fraction` is also supplied
+to the classifier as an input feature. This means the reported 100% test
+accuracy demonstrates the pipeline runs correctly end-to-end, **not** that
+flood risk is genuinely predictable from these features. See
+`docs/model_card.md` for what a non-leaky evaluation would require.
 
 ### Spatial Autocorrelation
 **Critical**: Flood risk is spatially autocorrelated — adjacent regions are not independent. Random train-test splits leak spatial information, inflating apparent performance. **Proper evaluation requires spatial cross-validation** (e.g., leave-one-region-out or spatial k-fold).
@@ -198,6 +231,7 @@ uv run pytest --cov=src --cov-report=term-missing
 - RandomForest on 7 features is deliberately simple; the geospatial handling is the demonstration
 - Real flood risk depends on topography, hydrology, land use, climate — not captured here
 - Model is not operationally validated
+- Only 21 samples total (~4-5 in any test split) — no metric here is a robust generalization estimate
 
 ### Data Limitations
 - ISPRA flood data requires manual download (see `make help-data` or data/README.md)
@@ -215,6 +249,7 @@ uv run pytest --cov=src --cov-report=term-missing
 ┌─────────────────────────────────────────────────────────────┐
 │                    Streamlit UI (app.py)                    │
 │  ┌──────────────────────────────────────────────────────┐   │
+│  │ Model selector (Classifier/Regressor)                │   │
 │  │ Predicted Risk Map | Actual vs Predicted | Features  │   │
 │  │ (folium choropleth, layer toggle, explorer)          │   │
 │  └──────────────────────────────────────────────────────┘   │
@@ -223,27 +258,34 @@ uv run pytest --cov=src --cov-report=term-missing
                        ▼
         ┌──────────────────────────────┐
         │   RiskPredictor (predict.py) │
-        │   (loads trained model)      │
+        │   (loads BOTH trained models)│
         └──────────────────────────────┘
                        │
-                       ▼
-        ┌──────────────────────────────┐
-        │  Trained Model (RandomForest)│
-        │  (models/artifact.joblib)    │
-        └──────────────────────────────┘
-                       │
+              ┌────────┴────────┐
+              ▼                 ▼
+   ┌────────────────┐  ┌────────────────┐
+   │  Classifier     │  │  Regressor      │
+   │ (models/        │  │ (models/        │
+   │  classifier.    │  │  regressor.     │
+   │  joblib)        │  │  joblib)        │
+   └────────┬────────┘  └────────┬────────┘
+            └──────────┬─────────┘
                        ▼
         ┌──────────────────────────────┐
         │  Features (features.py)      │
-        │  (spatial joins, engineering)│
+        │  (spatial join + polygon     │
+        │   clip + engineering)        │
         └──────────────────────────────┘
                        │
                        ▼
         ┌──────────────────────────────┐
         │  Data (data.py)              │
-        │  (NUTS + ISPRA flood data)   │
+        │  (NUTS + ISPRA flood data,   │
+        │   GeoParquet cache)          │
         └──────────────────────────────┘
 ```
+
+See `docs/architecture.md` for the full diagram and module breakdown.
 
 ## Quality Gate
 
@@ -255,7 +297,7 @@ make check
 
 - **Ruff lint**: E/F/I/N/UP/B/SIM/C4 rules
 - **Pyright typecheck**: Standard mode, pandas/geopandas stubs relaxed
-- **Pytest**: 38 tests, ~45% coverage
+- **Pytest**: 46 tests, ~50% coverage
 
 ## Documentation
 
@@ -266,6 +308,7 @@ make check
 
 ## Future Improvements
 
+- **Remove classifier target leakage**: Evaluate without `flood_fraction` as an input feature, or on held-out regions never used to derive the target
 - **Raster/satellite imagery**: Copernicus DEM, Sentinel-2 for land cover
 - **Spatial cross-validation**: Leave-one-region-out or spatial k-fold
 - **PostGIS backend**: Scalable spatial database for large regions
@@ -273,14 +316,15 @@ make check
 - **Temporal modeling**: Time-series risk evolution, seasonal patterns
 - **MLflow tracking**: Experiment management and model registry
 - **Deployment**: Docker containerization, cloud deployment (AWS/GCP)
-- **pydeck integration**: GPU-accelerated 3D map rendering (see notes in mapping.py)
+- **evaluate.py integration**: currently a standalone module not wired into the training pipeline — no plots are generated automatically today
+- **pydeck integration**: GPU-accelerated 3D map rendering (not yet implemented)
 
 ## References
 
 - GeoPandas: https://geopandas.org/
 - Folium: https://python-visualization.github.io/folium/
 - Streamlit: https://streamlit.io/
-- ISPRA: http://www.pcn.minambiente.it/
+- ISPRA IdroGEO: https://idrogeo.isprambiente.it/
 - Eurostat GISCO: https://ec.europa.eu/eurostat/web/gisco/
 
 ## License

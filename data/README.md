@@ -151,10 +151,14 @@ features_df, target = engineer_features(nuts_gdf, flood_gdf)
 ```
 
 This:
-1. Intersects flood hazard polygons with NUTS regions
-2. Aggregates hazard area per region
+1. Intersects flood hazard polygons with NUTS regions (`predicate="intersects"`)
+2. **Clips** each matched flood polygon to the region geometry and sums only
+   the clipped area per region (not the whole polygon — see "Known Issues"
+   below for why this matters)
 3. Computes flood exposure metrics (fraction, hazard class distribution)
-4. Creates target labels (Low/Medium/High risk)
+4. Creates target labels (Low/Medium/High risk) via **quantile (tertile)
+   binning** of `flood_fraction` — not fixed percentage cutoffs, so the
+   exact class boundaries are relative to the current dataset
 
 ### Geometry Validation
 
@@ -218,37 +222,53 @@ data/
 
 ### ISPRA Flood Data
 - **License**: CC BY-SA 4.0 IT (Creative Commons Attribution-ShareAlike 4.0 Italy)
-- **Attribution**: "Data sourced from ISPRA (Istituto Superiore per la Protezione e la Ricerca Ambientale) and the Italian Ministry of Environment (http://www.pcn.minambiente.it/)"
+- **Attribution**: "Data sourced from ISPRA (Istituto Superiore per la Protezione e la Ricerca Ambientale) and the Italian Ministry of Environment (https://idrogeo.isprambiente.it/)"
 
 When publishing results, include both attributions.
 
 ## Reproducibility
 
-To reproduce the data pipeline:
+To reproduce the data pipeline (requires ISPRA shapefiles already downloaded
+to `data/ispra_shapefiles/` — see "Data Download" above):
 
 ```bash
-# Clear cached data
-rm -rf data/raw data/processed
+# Clear the validated-data cache (does not touch the downloaded shapefiles themselves)
+make clean-cache
+# or: uv run python -c "from geo_risk.data import clear_cache; clear_cache()"
 
-# Re-download and process
-uv run python -c "from geo_risk.data import load_and_validate; load_and_validate()"
+# Re-validate from the downloaded shapefiles
+uv run python -c "
+from geo_risk.data import load_and_validate
+load_and_validate(flood_path='data/ispra_shapefiles/')
+"
 ```
+
+Note: `load_and_validate()` requires an explicit `flood_path` — there is no
+automatic download for ISPRA data (see "Why manual?" above), so calling it
+with no arguments will raise `FileNotFoundError` by design.
 
 ## Known Issues & Workarounds
 
 1. **ISPRA Data Download**: Manual download required (no automatic download). See "Data Download" section above for instructions.
 2. **Large File Sizes**: Full ISPRA national mosaic can be > 500 MB. Consider filtering by region (e.g., Piemonte, Lombardia) for faster processing.
 3. **Network Dependency**: Datahub.io (NUTS) may be temporarily unavailable. Local NUTS file fallback is supported via `load_nuts_boundaries(path='...')`.
+4. **Spatial join area accuracy**: Flood hazard polygons often span multiple
+   NUTS regions; `engineer_features` clips each matched polygon to the
+   region before computing area (via an equal-area projection) to avoid
+   overcounting — summing whole-polygon area per intersecting region would
+   otherwise inflate exposure by ~10x for most regions (found and fixed
+   against the real dataset; see `docs/experiment_log.md`).
 
 ## Future Improvements
 
-- Cache downloaded data locally (with versioning)
+- Cache versioning (the cache itself — GeoParquet in `data/processed/`,
+  invalidated by source file size/mtime — is already implemented)
 - Support for other European regions (extend NUTS filtering)
 - Raster data integration (Copernicus DEM, Sentinel-2)
 - Temporal data (historical flood events, climate projections)
 
 ---
 
-**Last Updated**: 2026-07-13  
-**CRS**: EPSG:4326 (WGS84)  
+**Last Updated**: 2026-07-14
+**CRS**: EPSG:4326 (WGS84)
 **Extent**: Italy (NUTS 2 regions)

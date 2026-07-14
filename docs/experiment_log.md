@@ -166,6 +166,6 @@ did crash (class imbalance) was a downstream symptom of the same root cause.
 
 ---
 
-**Log Version**: 1.0  
-**Last Updated**: 2026-07-13  
+**Log Version**: 1.1
+**Last Updated**: 2026-07-14
 **Maintainer**: Luke Gardiner

@@ -115,10 +115,14 @@ if map_type == "Predicted Risk":
     if model_type == "Classification (3-class)":
         st.markdown(
             """
-            This map shows the predicted flood risk class for each NUTS 2 region:
-            - **Green:** Low risk (< 5% flood coverage)
-            - **Orange:** Medium risk (5-15% flood coverage)
-            - **Red:** High risk (> 15% flood coverage)
+            This map shows the predicted flood risk class for each NUTS 2 region.
+            Classes are assigned via **tertile binning** of flood exposure
+            (roughly the lowest/middle/highest third of regions by flood
+            coverage in the training data), not fixed percentage cutoffs —
+            the exact boundaries depend on the training run.
+            - 🟢 **Green:** Low risk (bottom third)
+            - 🟠 **Orange:** Medium risk (middle third)
+            - 🔴 **Red:** High risk (top third)
             """
         )
     else:
@@ -210,7 +214,7 @@ else:  # Feature Explorer
     st.subheader("Top Features by Importance")
     try:
         model_name = "classifier" if model_type == "Classification (3-class)" else "regressor"
-        importance_path = Path("./models") / f"{model_name}_feature_importance.csv"
+        importance_path = Path(settings.models_dir) / f"{model_name}_feature_importance.csv"
         if importance_path.exists():
             importance_df = pd.read_csv(importance_path)
             st.bar_chart(
