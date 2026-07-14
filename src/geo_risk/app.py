@@ -10,6 +10,7 @@ import pandas as pd
 import streamlit as st
 from streamlit_folium import st_folium
 
+from geo_risk.config import settings
 from geo_risk.data import load_and_validate
 from geo_risk.features import add_spatial_features, engineer_features
 from geo_risk.mapping import create_comparison_map, create_risk_choropleth
@@ -55,20 +56,22 @@ map_type = st.sidebar.radio(
 def load_resources():
     """Load data and trained models (cached)."""
     try:
-        # Load geodata
-        nuts_gdf, flood_gdf = load_and_validate()
+        # Load geodata. flood_path comes from settings (env var FLOOD_PATH or
+        # .env), since — unlike train.py's CLI — this script has no argument
+        # to receive it; defaults to ./data/ispra_shapefiles.
+        nuts_gdf, flood_gdf = load_and_validate(flood_path=settings.flood_path)
 
         # Engineer features
         features_df, target = engineer_features(nuts_gdf, flood_gdf)
         features_df = add_spatial_features(features_df)
 
         # Load models
-        model_dir = Path("./models")
+        model_dir = Path(settings.models_dir)
         if not model_dir.exists():
             st.warning("Model directory not found. Training models...")
-            from .train import train_and_save_all
+            from geo_risk.train import train_and_save_all
 
-            train_and_save_all()
+            train_and_save_all(flood_path=settings.flood_path)
 
         predictor = RiskPredictor(model_dir)
 

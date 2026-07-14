@@ -40,8 +40,8 @@ train:          ## Train both classifier and regressor models
 run-api:        ## Serve FastAPI locally (requires trained models)
 	uv run uvicorn geo_risk.api:app --reload
 
-run-app:        ## Serve Streamlit locally (requires trained models)
-	uv run streamlit run src/geo_risk/app.py
+run-app:        ## Serve Streamlit locally (requires trained models; optional FLOOD_PATH override)
+	$(if $(FLOOD_PATH),FLOOD_PATH=$(FLOOD_PATH)) uv run streamlit run src/geo_risk/app.py
 
 clean-cache:    ## Remove cached validated geodata (data/processed/)
 	uv run python -c "from geo_risk.data import clear_cache; clear_cache()"
