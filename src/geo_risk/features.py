@@ -30,7 +30,9 @@ def engineer_features(
     - hazard_p2_fraction: Fraction covered by medium-risk (P2) hazard
     - region_area_km2: Total region area
 
-    Target: flood_risk_class (0=low, 1=medium, 2=high) based on flood_fraction.
+    Target: flood_risk_class (0=low, 1=medium, 2=high), assigned via tertile
+    (quantile) binning of flood_fraction so classes stay roughly balanced
+    regardless of the underlying exposure distribution — see notes below.
 
     Args:
         nuts_gdf: GeoDataFrame with NUTS regions.
@@ -52,30 +54,47 @@ def engineer_features(
         nuts_gdf.set_index("NUTS_ID").geometry.to_crs(_EQUAL_AREA_CRS).area / 1e6
     ).rename("region_area_km2")
 
-    # Spatial join: find flood areas within each NUTS region
+    # Spatial join: find flood polygons that intersect each NUTS region.
+    # NOTE: "intersects" only tells us a flood polygon touches the region at
+    # all — ISPRA hazard polygons follow rivers/coastlines and routinely span
+    # multiple regions, so a large polygon can intersect a small region while
+    # extending far outside it. Summing each matched polygon's *whole* area
+    # (as a naive sjoin+groupby would) massively overcounts exposure — we saw
+    # flood_area_km2 exceed region_area_km2 by 10x for most regions. We must
+    # clip each matched flood polygon to the region and use the *intersected*
+    # area instead.
     logger.info(
         f"Performing spatial join ({len(nuts_gdf)} regions x {len(flood_gdf)} hazard polygons)"
     )
+    flood_cols = flood_gdf[["hazard_class", "geometry"]].copy()
+    flood_cols["flood_geometry"] = flood_cols.geometry  # carried through as a plain column
     joined = gpd.sjoin(
         nuts_gdf[["NUTS_ID", "geometry"]],
-        flood_gdf[["hazard_class", "area_km2", "geometry"]],
+        flood_cols[["hazard_class", "flood_geometry", "geometry"]],
         how="left",
         predicate="intersects",
     )
-    logger.info(f"Spatial join produced {len(joined)} matched rows")
+    logger.info(f"Spatial join produced {len(joined)} candidate matched rows")
 
-    # Aggregate flood area per region (vectorized groupby, not a per-region Python loop)
+    matched = joined[joined["flood_geometry"].notna()].copy()
+    logger.info(f"Clipping {len(matched)} matched flood polygons to their region geometry")
+    region_geom = gpd.GeoSeries(matched.geometry.to_numpy(), crs=matched.crs)
+    flood_geom = gpd.GeoSeries(matched["flood_geometry"].to_numpy(), crs=matched.crs)
+    intersection = region_geom.intersection(flood_geom)
+    matched["inter_area_km2"] = (intersection.to_crs(_EQUAL_AREA_CRS).area / 1e6).to_numpy()
+
+    # Aggregate clipped flood area per region (vectorized groupby, not a per-region loop)
     logger.info("Aggregating flood exposure per region (groupby)")
-    total_flood_area = joined.groupby("NUTS_ID")["area_km2"].sum().rename("flood_area_km2")
+    total_flood_area = matched.groupby("NUTS_ID")["inter_area_km2"].sum().rename("flood_area_km2")
     p3_area = (
-        joined[joined["hazard_class"] == "P3"]
-        .groupby("NUTS_ID")["area_km2"]
+        matched[matched["hazard_class"] == "P3"]
+        .groupby("NUTS_ID")["inter_area_km2"]
         .sum()
         .rename("p3_area_km2")
     )
     p2_area = (
-        joined[joined["hazard_class"] == "P2"]
-        .groupby("NUTS_ID")["area_km2"]
+        matched[matched["hazard_class"] == "P2"]
+        .groupby("NUTS_ID")["inter_area_km2"]
         .sum()
         .rename("p2_area_km2")
     )
@@ -107,17 +126,21 @@ def engineer_features(
     ]
     features_df.index.name = "NUTS_ID"
 
-    # Create target: flood risk class based on flood_fraction
-    # 0 = low (< 5%), 1 = medium (5-15%), 2 = high (> 15%)
-    target = pd.Series(
-        index=features_df.index,
-        dtype="int64",
-        name="flood_risk_class",
-    )
-    target.loc[features_df["flood_fraction"] < 0.05] = 0
-    target.loc[(features_df["flood_fraction"] >= 0.05) & (features_df["flood_fraction"] < 0.15)] = 1
-    target.loc[features_df["flood_fraction"] >= 0.15] = 2
-    target = target.astype(int)
+    # Create target: flood risk class based on flood_fraction.
+    #
+    # Uses quantile-based (tertile) binning rather than fixed absolute cutoffs
+    # (e.g. <5%/5-15%/>15%). Fixed cutoffs picked without seeing the real data
+    # produced a severely imbalanced target against actual ISPRA national
+    # hazard-mosaic exposure (which covers a substantial fraction of nearly
+    # every Italian NUTS 2 region) — 20 of 21 regions landed in a single
+    # class, which also breaks stratified train/test splitting downstream.
+    # Tertiles guarantee a roughly balanced 3-class target regardless of the
+    # underlying distribution, at the cost of the class boundaries being
+    # relative (this dataset) rather than fixed absolute thresholds.
+    target = pd.qcut(
+        features_df["flood_fraction"], q=3, labels=[0, 1, 2], duplicates="drop"
+    ).astype(int)
+    target.name = "flood_risk_class"
 
     logger.info(
         f"Engineered {len(features_df)} regions; "

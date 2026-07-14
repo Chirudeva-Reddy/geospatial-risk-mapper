@@ -44,13 +44,23 @@ def train_classifier(
 
     logger.info(f"Training RandomForest Classifier with {len(features_df)} samples")
 
-    # Train-test split
+    # Train-test split. Stratification requires every class to have at least
+    # 2 members (so both train and test get at least 1); fall back to a plain
+    # split with a warning rather than crashing if a class is too small — this
+    # can happen with small-n datasets even after balancing the target.
+    class_counts = target.value_counts()
+    can_stratify = (class_counts >= 2).all()
+    if not can_stratify:
+        logger.warning(
+            f"Cannot stratify split: class counts are {class_counts.to_dict()} "
+            "(a class has < 2 members). Falling back to a non-stratified split."
+        )
     X_train, X_test, y_train, y_test = train_test_split(
         features_df,
         target,
         test_size=test_size,
         random_state=random_state,
-        stratify=target,
+        stratify=target if can_stratify else None,
     )
 
     logger.info(f"Train: {len(X_train)}, Test: {len(X_test)}")

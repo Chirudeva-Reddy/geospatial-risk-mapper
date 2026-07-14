@@ -15,25 +15,38 @@ from geo_risk.predict import (
 )
 from geo_risk.train import save_model, train_classifier, train_regressor
 
+N_REGIONS = 20
+
 
 @pytest.fixture
 def nuts_gdf():
-    """Create synthetic NUTS GeoDataFrame."""
+    """Create synthetic NUTS GeoDataFrame with N_REGIONS non-overlapping regions."""
     data = {
-        "NUTS_ID": [f"IT{i}" for i in range(10)],
-        "geometry": [box(10.0 + i, 40.0, 10.5 + i, 40.5) for i in range(10)],
+        "NUTS_ID": [f"IT{i}" for i in range(N_REGIONS)],
+        "geometry": [box(10.0 + i, 40.0, 11.0 + i, 41.0) for i in range(N_REGIONS)],
     }
     return gpd.GeoDataFrame(data, crs="EPSG:4326")
 
 
 @pytest.fixture
 def flood_gdf():
-    """Create synthetic flood hazard GeoDataFrame."""
+    """Create synthetic flood hazard GeoDataFrame with a genuinely varying,
+    monotonically increasing overlap fraction per region (roughly 5%-95%),
+    so the quantile-based target in engineer_features has enough distinct
+    values to split into balanced tertiles (avoids all regions collapsing to
+    an identical flood_fraction, which previously happened when every flood
+    box used the same fixed proportional offset as its region)."""
+    hazard_classes = ["P1", "P2", "P3"]
+    geometries = []
+    for i in range(N_REGIONS):
+        frac = (i + 1) / (N_REGIONS + 1)  # distinct, increasing, strictly in (0, 1)
+        x0 = 10.0 + i
+        geometries.append(box(x0, 40.0, x0 + frac, 41.0))
     data = {
-        "hazard_class": ["P1", "P2", "P3"] * 3 + ["P1"],
-        "area_km2": [100.0, 200.0, 150.0] * 3 + [100.0],
-        "geometry": [box(10.2 + i, 40.2, 10.5 + i, 40.5) for i in range(9)]
-        + [box(19.2, 40.2, 19.5, 40.5)],
+        "hazard_class": [hazard_classes[i % 3] for i in range(N_REGIONS)],
+        "area_km2": [1.0] * N_REGIONS,  # unused by engineer_features (area is
+        # computed from geometry), kept only for schema compatibility
+        "geometry": geometries,
     }
     return gpd.GeoDataFrame(data, crs="EPSG:4326")
 
