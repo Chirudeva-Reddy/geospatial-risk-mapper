@@ -1,6 +1,5 @@
 """Tests for model training and evaluation."""
 
-
 import geopandas as gpd
 import pytest
 from shapely.geometry import box

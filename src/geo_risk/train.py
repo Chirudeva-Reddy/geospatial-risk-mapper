@@ -160,7 +160,7 @@ def train_regressor(
     y_pred = model.predict(X_test)
 
     mse = mean_squared_error(y_test, y_pred)
-    rmse = float(mse ** 0.5)
+    rmse = float(mse**0.5)
 
     metrics = {
         "mae": float(mean_absolute_error(y_test, y_pred)),
@@ -264,7 +264,9 @@ def train_and_save_all(
         print("\n[1/5] Loading geospatial data...")
         print("      - Loading NUTS 2 administrative boundaries...")
         print("      - Loading ISPRA flood hazard shapefiles (HPH, MPH, LPH)...")
-        print("      - This may take a few minutes for large datasets (first run only; cached after)...")
+        print(
+            "      - This may take a few minutes for large datasets (first run only; cached after)..."
+        )
         try:
             nuts_gdf, flood_gdf = load_and_validate(nuts_path, flood_path, use_cache=use_cache)
             print(f"      ✓ Loaded {len(nuts_gdf)} regions and {len(flood_gdf)} hazard polygons")
@@ -286,7 +288,9 @@ def train_and_save_all(
             features_df, target_class = engineer_features(nuts_gdf, flood_gdf)
             features_df = add_spatial_features(features_df)
             print("done")
-            print(f"      ✓ Created {len(features_df.columns)} features for {len(features_df)} regions")
+            print(
+                f"      ✓ Created {len(features_df.columns)} features for {len(features_df)} regions"
+            )
         except Exception as e:
             print("\n      ✗ ERROR: Feature engineering failed")
             print(f"      {type(e).__name__}: {str(e)}")

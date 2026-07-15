@@ -92,10 +92,7 @@ def _score_to_class(score: float) -> int:
 
 def _is_classification(values: pd.Series) -> bool:
     """Return True if values are integer risk classes in {0, 1, 2}."""
-    return bool(
-        pd.api.types.is_integer_dtype(values)
-        and values.dropna().isin([0, 1, 2]).all()
-    )
+    return bool(pd.api.types.is_integer_dtype(values) and values.dropna().isin([0, 1, 2]).all())
 
 
 def _create_colormap(

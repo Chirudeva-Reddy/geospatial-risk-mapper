@@ -18,9 +18,7 @@ def _write_ispra_style_shapefiles(directory):
         "LPH": box(12.2, 40.2, 12.5, 40.5),
     }
     for prefix, geom in hazard_files.items():
-        gdf = gpd.GeoDataFrame(
-            {"scenario": ["1"], "geometry": [geom]}, crs="EPSG:4326"
-        )
+        gdf = gpd.GeoDataFrame({"scenario": ["1"], "geometry": [geom]}, crs="EPSG:4326")
         gdf.to_file(directory / f"{prefix}_test.shp")
 
 

@@ -1,6 +1,5 @@
 """Tests for prediction utilities."""
 
-
 import geopandas as gpd
 import pandas as pd
 import pytest
@@ -180,15 +179,18 @@ def test_risk_predictor_batch_classification(trained_models):
     """Test that RiskPredictor can make batch classification predictions."""
     predictor = RiskPredictor(trained_models)
 
-    features_df = pd.DataFrame({
-        "flood_area_km2": [100.0, 200.0, 50.0],
-        "flood_fraction": [0.1, 0.2, 0.05],
-        "hazard_p3_fraction": [0.05, 0.1, 0.02],
-        "hazard_p2_fraction": [0.05, 0.1, 0.03],
-        "region_area_km2": [1000.0, 1000.0, 1000.0],
-        "p3_p2_ratio": [1.0, 1.0, 0.67],
-        "high_hazard_indicator": [0, 1, 0],
-    }, index=["IT1", "IT2", "IT3"])
+    features_df = pd.DataFrame(
+        {
+            "flood_area_km2": [100.0, 200.0, 50.0],
+            "flood_fraction": [0.1, 0.2, 0.05],
+            "hazard_p3_fraction": [0.05, 0.1, 0.02],
+            "hazard_p2_fraction": [0.05, 0.1, 0.03],
+            "region_area_km2": [1000.0, 1000.0, 1000.0],
+            "p3_p2_ratio": [1.0, 1.0, 0.67],
+            "high_hazard_indicator": [0, 1, 0],
+        },
+        index=["IT1", "IT2", "IT3"],
+    )
 
     results = predictor.predict_batch_classification(features_df)
 
@@ -202,15 +204,18 @@ def test_risk_predictor_batch_regression(trained_models):
     """Test that RiskPredictor can make batch regression predictions."""
     predictor = RiskPredictor(trained_models)
 
-    features_df = pd.DataFrame({
-        "flood_area_km2": [100.0, 200.0, 50.0],
-        "flood_fraction": [0.1, 0.2, 0.05],
-        "hazard_p3_fraction": [0.05, 0.1, 0.02],
-        "hazard_p2_fraction": [0.05, 0.1, 0.03],
-        "region_area_km2": [1000.0, 1000.0, 1000.0],
-        "p3_p2_ratio": [1.0, 1.0, 0.67],
-        "high_hazard_indicator": [0, 1, 0],
-    }, index=["IT1", "IT2", "IT3"])
+    features_df = pd.DataFrame(
+        {
+            "flood_area_km2": [100.0, 200.0, 50.0],
+            "flood_fraction": [0.1, 0.2, 0.05],
+            "hazard_p3_fraction": [0.05, 0.1, 0.02],
+            "hazard_p2_fraction": [0.05, 0.1, 0.03],
+            "region_area_km2": [1000.0, 1000.0, 1000.0],
+            "p3_p2_ratio": [1.0, 1.0, 0.67],
+            "high_hazard_indicator": [0, 1, 0],
+        },
+        index=["IT1", "IT2", "IT3"],
+    )
 
     results = predictor.predict_batch_regression(features_df)
 

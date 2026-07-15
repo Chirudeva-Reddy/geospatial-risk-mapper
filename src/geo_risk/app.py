@@ -55,6 +55,7 @@ map_type = st.sidebar.radio(
     help="Choose which map to display",
 )
 
+
 # Load data and models
 @st.cache_resource
 def load_resources():
@@ -221,9 +222,7 @@ else:  # Feature Explorer
         importance_path = Path(settings.models_dir) / f"{model_name}_feature_importance.csv"
         if importance_path.exists():
             importance_df = pd.read_csv(importance_path)
-            st.bar_chart(
-                importance_df.set_index("feature")["importance"].head(10)
-            )
+            st.bar_chart(importance_df.set_index("feature")["importance"].head(10))
     except Exception as e:
         st.warning(f"Could not load feature importance: {e}")
 

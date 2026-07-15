@@ -56,9 +56,7 @@ class ClassificationResponse(BaseModel):
 class RegressionResponse(BaseModel):
     """Response schema for regression prediction."""
 
-    risk_score: float = Field(
-        ..., ge=0, le=1, description="Continuous risk score (0=low, 1=high)"
-    )
+    risk_score: float = Field(..., ge=0, le=1, description="Continuous risk score (0=low, 1=high)")
     risk_label: str = Field(..., description="Risk category based on score")
 
 
@@ -98,9 +96,7 @@ class RiskPredictor:
             self.feature_names = json.load(f)
         logger.info(f"Loaded {len(self.feature_names)} feature names")
 
-    def predict_classification(
-        self, features: dict | pd.Series
-    ) -> ClassificationResponse:
+    def predict_classification(self, features: dict | pd.Series) -> ClassificationResponse:
         """Predict flood risk class (Low/Medium/High).
 
         Accepts either the full feature set or the five base input fields
@@ -122,10 +118,9 @@ class RiskPredictor:
         features = features.copy()
 
         # Compute derived features if the caller only supplied base inputs.
-        if (
-            all(name in features.index for name in ("hazard_p3_fraction", "hazard_p2_fraction"))
-            and not all(name in features.index for name in self.feature_names)
-        ):
+        if all(
+            name in features.index for name in ("hazard_p3_fraction", "hazard_p2_fraction")
+        ) and not all(name in features.index for name in self.feature_names):
             features = add_spatial_features(pd.DataFrame([features])).iloc[0]
 
         # Validate features
@@ -177,10 +172,9 @@ class RiskPredictor:
         features = features.copy()
 
         # Compute derived features if the caller only supplied base inputs.
-        if (
-            all(name in features.index for name in ("hazard_p3_fraction", "hazard_p2_fraction"))
-            and not all(name in features.index for name in self.feature_names)
-        ):
+        if all(
+            name in features.index for name in ("hazard_p3_fraction", "hazard_p2_fraction")
+        ) and not all(name in features.index for name in self.feature_names):
             features = add_spatial_features(pd.DataFrame([features])).iloc[0]
 
         # Validate features

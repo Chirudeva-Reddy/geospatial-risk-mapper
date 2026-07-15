@@ -88,12 +88,13 @@ def engineer_features(
     # that class (ISPRA mosaics are non-overlapping within a class), while the
     # total flood area is the union of all three classes to avoid double
     # counting where P1/P2/P3 overlap.
-    matched["inter_area_km2"] = (
-        intersection.to_crs(_EQUAL_AREA_CRS).area / 1e6
-    ).to_numpy()
+    matched["inter_area_km2"] = (intersection.to_crs(_EQUAL_AREA_CRS).area / 1e6).to_numpy()
 
     clipped = gpd.GeoDataFrame(
-        {"NUTS_ID": matched["NUTS_ID"].to_numpy(), "hazard_class": matched["hazard_class"].to_numpy()},
+        {
+            "NUTS_ID": matched["NUTS_ID"].to_numpy(),
+            "hazard_class": matched["hazard_class"].to_numpy(),
+        },
         geometry=intersection,
         crs=matched.crs,
     )

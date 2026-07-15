@@ -183,11 +183,9 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
         )
 
     path = Path(path)
-    
+
     if not path.is_dir():
-        raise ValueError(
-            f"Path must be a directory containing ISPRA shapefiles: {path}"
-        )
+        raise ValueError(f"Path must be a directory containing ISPRA shapefiles: {path}")
 
     # Find shapefiles for each hazard class
     hazard_classes = {
@@ -204,15 +202,12 @@ def load_ispra_flood_hazard(path: str | Path | None = None) -> gpd.GeoDataFrame:
                 f"No shapefile found for {description} ({prefix}_*.shp) in {path}"
             )
         if len(shp_files) > 1:
-            logger.warning(
-                f"Multiple {prefix} shapefiles found. Using: {shp_files[0]}"
-            )
+            logger.warning(f"Multiple {prefix} shapefiles found. Using: {shp_files[0]}")
 
         shp_path = shp_files[0]
         size_mb = shp_path.stat().st_size / (1024 * 1024)
         print(
-            f"        ({i}/3) Reading {prefix} shapefile [{description}] "
-            f"({size_mb:.0f} MB)...",
+            f"        ({i}/3) Reading {prefix} shapefile [{description}] ({size_mb:.0f} MB)...",
             end=" ",
             flush=True,
         )
@@ -290,7 +285,9 @@ def load_and_validate(
     flood_cache_path = resolved_cache_dir / _FLOOD_CACHE_NAME
     meta_path = resolved_cache_dir / _CACHE_META_NAME
 
-    nuts_fingerprint = str(Path(nuts_path).resolve()) if nuts_path is not None else "remote:datahub.io"
+    nuts_fingerprint = (
+        str(Path(nuts_path).resolve()) if nuts_path is not None else "remote:datahub.io"
+    )
     flood_fingerprint = (
         _fingerprint_dir(Path(flood_path), ("*.shp", "*.dbf", "*.shx", "*.prj"))
         if flood_path is not None
@@ -326,9 +323,7 @@ def load_and_validate(
 
     # Validate CRS match
     if nuts_gdf.crs != flood_gdf.crs:
-        raise ValueError(
-            f"CRS mismatch: NUTS {nuts_gdf.crs} != Flood {flood_gdf.crs}"
-        )
+        raise ValueError(f"CRS mismatch: NUTS {nuts_gdf.crs} != Flood {flood_gdf.crs}")
 
     # Validate geometries
     print("        Validating NUTS geometries...", end=" ", flush=True)
@@ -336,7 +331,11 @@ def load_and_validate(
     print("done")
     if not nuts_valid.all():
         n_invalid = int((~nuts_valid).sum())
-        print(f"        Fixing {n_invalid} invalid NUTS geometries (buffer(0))...", end=" ", flush=True)
+        print(
+            f"        Fixing {n_invalid} invalid NUTS geometries (buffer(0))...",
+            end=" ",
+            flush=True,
+        )
         logger.warning(f"{n_invalid} NUTS geometries are invalid; attempting fix")
         nuts_gdf.geometry = nuts_gdf.geometry.buffer(0)
         print("done")
@@ -351,21 +350,29 @@ def load_and_validate(
     print("done")
     if not flood_valid.all():
         n_invalid = int((~flood_valid).sum())
-        print(f"        Fixing {n_invalid} invalid flood geometries (buffer(0))...", end=" ", flush=True)
+        print(
+            f"        Fixing {n_invalid} invalid flood geometries (buffer(0))...",
+            end=" ",
+            flush=True,
+        )
         logger.warning(f"{n_invalid} flood geometries are invalid; attempting fix")
         flood_gdf.geometry = flood_gdf.geometry.buffer(0)
         print("done")
 
-    logger.info(
-        f"Loaded {len(nuts_gdf)} NUTS regions and {len(flood_gdf)} flood areas"
-    )
+    logger.info(f"Loaded {len(nuts_gdf)} NUTS regions and {len(flood_gdf)} flood areas")
 
     if use_cache:
-        print(f"        Caching validated data to {resolved_cache_dir}/ for faster re-runs...", end=" ", flush=True)
+        print(
+            f"        Caching validated data to {resolved_cache_dir}/ for faster re-runs...",
+            end=" ",
+            flush=True,
+        )
         nuts_gdf.to_parquet(nuts_cache_path)
         flood_gdf.to_parquet(flood_cache_path)
         meta_path.write_text(
-            json.dumps({"nuts_fingerprint": nuts_fingerprint, "flood_fingerprint": flood_fingerprint})
+            json.dumps(
+                {"nuts_fingerprint": nuts_fingerprint, "flood_fingerprint": flood_fingerprint}
+            )
         )
         print("done")
 
