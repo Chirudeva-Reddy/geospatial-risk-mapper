@@ -181,6 +181,54 @@ tertile target) on the whole dataset; the **Regression Score** is `1 - MAE`
 against the actual `flood_fraction` on the whole dataset. These are not the
 test-set metrics reported in `models/*_metrics.json`.
 
+### Streamlit UI Demo
+
+The screenshots below walk through the main views of the app after running
+`make run-app`.
+
+#### Classification — Predicted Risk
+
+Top of the page with the **Classification** model and **Predicted Risk Map**
+layer selected.
+
+![Classification predicted risk — top of page](img/ui_classifier_predicted_top.png)
+
+The same view scrolled down to show the full folium choropleth. Regions are
+classified as Low (green), Medium (orange), or High (red) by tertile binning.
+
+![Classification predicted risk — full map](img/ui_classifier_predicted_map.png)
+
+#### Classification — Actual vs Predicted
+
+Toggle the **Actual vs Predicted** layer to compare the model's predicted risk
+class with the true tertile-derived class for each region.
+
+![Classification actual vs predicted](img/ui_classifier_actual_vs_predicted.png)
+
+#### Regression — Predicted Risk
+
+Switch to the **Regression** model to see a continuous 0-1 risk score on a
+green-to-red gradient.
+
+![Regression predicted risk](img/ui_regressor_predicted.png)
+
+#### Regression — Actual vs Predicted
+
+The regression view's **Actual vs Predicted** toggle compares the predicted
+continuous score with the actual `flood_fraction`.
+
+![Regression actual vs predicted](img/ui_regressor_actual_vs_predicted.png)
+
+#### Feature Explorer
+
+The **Feature Explorer** view shows the regression model's high-level metrics,
+feature distribution, and the top features by importance. The top and bottom
+halves of the page are shown below.
+
+![Regression feature explorer — top of page](img/ui_regressor_feature_explorer_top.png)
+
+![Regression feature explorer — bottom of page](img/ui_regressor_feature_explorer_bottom.png)
+
 ### FastAPI
 
 ```bash
