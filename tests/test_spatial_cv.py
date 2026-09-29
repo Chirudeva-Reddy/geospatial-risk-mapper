@@ -241,3 +241,57 @@ def test_spatial_visualization_tools(synthetic_spatial_grid, tmp_path):
     )
     assert out_lisa.exists()
     assert out_lisa.stat().st_size > 0
+
+
+def test_haversine_metric_and_spatial_buffer():
+    # London (approx 0.0, 51.5) and Paris (approx 2.35, 48.85) ~ 340 km apart
+    coords = np.array([[0.0, 51.5], [2.35, 48.85], [13.4, 52.52]]) # London, Paris, Berlin
+    X = pd.DataFrame({"x": [1, 2, 3]})
+    y = pd.Series([10, 20, 30])
+
+    # Weight matrix with haversine
+    w_hav = build_spatial_weight_matrix(coords, metric="haversine", row_standardize=True)
+    assert w_hav.shape == (3, 3)
+    assert np.allclose(w_hav.sum(axis=1), 1.0)
+
+    # Buffer of 400km should exclude Paris from London's training set
+    sb_cv = SpatialBufferCV(buffer_distance=400.0, metric="haversine")
+    splits = list(sb_cv.split(X, y, coords_or_geo=coords))
+    assert len(splits) == 3
+
+    # For London (idx 0), Paris (idx 1) is ~340km <= 400km, so only Berlin (idx 2) should remain
+    train_0, test_0 = splits[0]
+    assert test_0[0] == 0
+    assert 1 not in train_0
+    assert 2 in train_0
+
+
+def test_spatial_cv_degenerate_and_nan_validation():
+    # All identical coordinates
+    identical_coords = np.array([[1.0, 1.0], [1.0, 1.0], [1.0, 1.0]])
+    X = pd.DataFrame({"feat": [1, 2, 3]})
+    skf = SpatialKFold(n_splits=2)
+    with pytest.raises(ValueError, match="at least 2 distinct spatial locations"):
+        list(skf.split(X, coords_or_geo=identical_coords))
+
+    # Single sample buffer CV
+    single_X = pd.DataFrame({"feat": [1]})
+    single_coords = np.array([[1.0, 1.0]])
+    sb = SpatialBufferCV()
+    with pytest.raises(ValueError, match="at least 2 samples"):
+        list(sb.split(single_X, coords_or_geo=single_coords))
+
+    # NaN in values
+    valid_coords = np.array([[0.0, 0.0], [1.0, 1.0], [2.0, 2.0]])
+    nan_vals = [1.0, np.nan, 3.0]
+    with pytest.raises(ValueError, match="contain NaN or Inf"):
+        compute_global_morans_i(nan_vals, valid_coords)
+
+    with pytest.raises(ValueError, match="contain NaN or Inf"):
+        compute_local_morans_i(nan_vals, valid_coords)
+
+    # NaN in coordinates
+    nan_coords = np.array([[0.0, np.nan], [1.0, 1.0], [2.0, 2.0]])
+    with pytest.raises(ValueError, match="contain NaN or Inf"):
+        extract_coordinates(nan_coords)
+

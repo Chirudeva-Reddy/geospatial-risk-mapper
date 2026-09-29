@@ -85,27 +85,48 @@ def extract_coordinates(
         np.ndarray of shape (N, 2).
     """
     if isinstance(geo_data, gpd.GeoDataFrame):
-        # Reproject to projected equal-area CRS if in geographic CRS to ensure accurate centroid
         gdf = geo_data
-        if gdf.crs is not None and gdf.crs.is_geographic:
-            projected = gdf.to_crs("EPSG:3035")
-            centroids = projected.geometry.centroid.to_crs(gdf.crs)
-        else:
+        try:
+            if gdf.crs is not None and gdf.crs.is_geographic:
+                utm_crs = gdf.estimate_utm_crs()
+                projected = gdf.to_crs(utm_crs)
+                centroids = projected.geometry.centroid.to_crs(gdf.crs)
+            else:
+                centroids = gdf.geometry.centroid
+        except Exception:
             centroids = gdf.geometry.centroid
         coords = np.column_stack([centroids.x.to_numpy(), centroids.y.to_numpy()])
+        if not np.all(np.isfinite(coords)):
+            raise ValueError("Extracted coordinates contain NaN or Inf.")
         return coords
     if isinstance(geo_data, pd.DataFrame):
         for pair in [("lon", "lat"), ("longitude", "latitude"), ("x", "y"), ("X", "Y")]:
             if pair[0] in geo_data.columns and pair[1] in geo_data.columns:
-                return geo_data[[pair[0], pair[1]]].to_numpy()
+                coords = geo_data[[pair[0], pair[1]]].to_numpy()
+                if not np.all(np.isfinite(coords)):
+                    raise ValueError("Coordinates contain NaN or Inf.")
+                return coords
         raise ValueError(
             f"DataFrame must contain coordinate columns (e.g. lon/lat or x/y). Found: {list(geo_data.columns)}"
         )
     if isinstance(geo_data, np.ndarray):
         if geo_data.ndim != 2 or geo_data.shape[1] != 2:
             raise ValueError(f"Array of coordinates must have shape (N, 2), got {geo_data.shape}")
+        if not np.all(np.isfinite(geo_data)):
+            raise ValueError("Coordinates contain NaN or Inf.")
         return geo_data.copy()
     raise TypeError(f"Unsupported geographic data type: {type(geo_data)}")
+
+
+def compute_haversine_distance_matrix(coords: np.ndarray) -> np.ndarray:
+    """Compute pairwise great-circle haversine distances in kilometers for (lon, lat) points in degrees."""
+    lon = np.radians(coords[:, 0])
+    lat = np.radians(coords[:, 1])
+    dlat = lat[:, None] - lat[None, :]
+    dlon = lon[:, None] - lon[None, :]
+    a = np.sin(dlat / 2.0) ** 2 + np.cos(lat[:, None]) * np.cos(lat[None, :]) * np.sin(dlon / 2.0) ** 2
+    c = 2.0 * np.arcsin(np.sqrt(np.clip(a, 0.0, 1.0)))
+    return 6371.0 * c
 
 
 def build_spatial_weight_matrix(
@@ -113,6 +134,7 @@ def build_spatial_weight_matrix(
     weight_type: str = "inverse_distance",
     k_neighbors: int | None = None,
     row_standardize: bool = True,
+    metric: str = "euclidean",
 ) -> np.ndarray:
     """Build spatial weight matrix W with zero diagonal.
 
@@ -121,6 +143,7 @@ def build_spatial_weight_matrix(
         weight_type: 'inverse_distance', 'k_nearest', or 'gaussian'.
         k_neighbors: Number of nearest neighbors if using 'k_nearest'.
         row_standardize: If True, row-standardizes W so each row sums to 1.
+        metric: 'euclidean' (coordinate units) or 'haversine' (kilometers for lon/lat).
 
     Returns:
         (N, N) spatial weight matrix.
@@ -129,9 +152,13 @@ def build_spatial_weight_matrix(
     if n < 2:
         raise ValueError("At least 2 spatial samples required to construct a spatial weight matrix.")
 
-    # Pairwise Euclidean distances
-    diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
-    dist = np.sqrt(np.sum(diff**2, axis=-1))
+    if metric == "haversine":
+        dist = compute_haversine_distance_matrix(coords)
+    elif metric == "euclidean":
+        diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+        dist = np.sqrt(np.sum(diff**2, axis=-1))
+    else:
+        raise ValueError(f"Unknown metric '{metric}'. Choose from 'euclidean', 'haversine'.")
 
     # Set self-distance to infinity to prevent division by zero on diagonal
     np.fill_diagonal(dist, np.inf)
@@ -190,6 +217,8 @@ def compute_global_morans_i(
         MoransIResult with i_stat, expected_i, variance, z_score, p_value.
     """
     x = np.asarray(values, dtype=float)
+    if not np.all(np.isfinite(x)):
+        raise ValueError("Input values contain NaN or Inf.")
     n = len(x)
     if n < 3:
         raise ValueError("Moran's I requires at least 3 spatial samples.")
@@ -259,6 +288,8 @@ def compute_local_morans_i(
     spatial outlier regions (High-Low, Low-High).
     """
     x = np.asarray(values, dtype=float)
+    if not np.all(np.isfinite(x)):
+        raise ValueError("Input values contain NaN or Inf.")
     n = len(x)
     coords = extract_coordinates(coords_or_geo)
     w = build_spatial_weight_matrix(coords, weight_type=weight_type, row_standardize=True)
@@ -320,8 +351,7 @@ class SpatialKFold:
     ) -> Generator[tuple[np.ndarray, np.ndarray]]:
         """Generate indices to split data into training and test sets."""
         n_samples = len(X)
-        effective_splits = min(self.n_splits, n_samples)
-        if effective_splits < 2:
+        if n_samples < 2:
             raise ValueError("Need at least 2 samples for spatial cross-validation.")
 
         if coords_or_geo is None:
@@ -335,6 +365,14 @@ class SpatialKFold:
 
         if len(coords) != n_samples:
             raise ValueError(f"Coords length ({len(coords)}) does not match sample count ({n_samples})")
+
+        unique_coords = np.unique(coords, axis=0)
+        if len(unique_coords) < 2:
+            raise ValueError(
+                f"SpatialKFold requires at least 2 distinct spatial locations, but found {len(unique_coords)}."
+            )
+
+        effective_splits = min(self.n_splits, len(unique_coords))
 
         # Cluster spatial coordinates
         kmeans = KMeans(
@@ -362,10 +400,14 @@ class SpatialBufferCV:
 
     For each test region i, excludes all regions j whose centroid distance
     dist(i, j) <= buffer_distance to eliminate proximate spatial autocorrelation leakage.
+    Supports 'euclidean' (coordinate units) or 'haversine' (kilometers for lon/lat).
     """
 
-    def __init__(self, buffer_distance: float = 0.0):
+    def __init__(self, buffer_distance: float = 0.0, metric: str = "euclidean"):
         self.buffer_distance = max(0.0, float(buffer_distance))
+        if metric not in ("euclidean", "haversine"):
+            raise ValueError(f"Unknown metric '{metric}'. Choose from 'euclidean', 'haversine'.")
+        self.metric = metric
 
     def split(
         self,
@@ -375,14 +417,19 @@ class SpatialBufferCV:
     ) -> Generator[tuple[np.ndarray, np.ndarray]]:
         """Generate leave-one-out splits with spatial buffer exclusion."""
         n_samples = len(X)
+        if n_samples < 2:
+            raise ValueError("SpatialBufferCV requires at least 2 samples.")
         if coords_or_geo is None:
             raise ValueError("coords_or_geo is required for SpatialBufferCV.")
 
         coords = extract_coordinates(coords_or_geo)
         all_indices = np.arange(n_samples)
 
-        diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
-        dist_matrix = np.sqrt(np.sum(diff**2, axis=-1))
+        if self.metric == "haversine":
+            dist_matrix = compute_haversine_distance_matrix(coords)
+        else:
+            diff = coords[:, np.newaxis, :] - coords[np.newaxis, :, :]
+            dist_matrix = np.sqrt(np.sum(diff**2, axis=-1))
 
         for i in range(n_samples):
             test_idx = np.array([i])
